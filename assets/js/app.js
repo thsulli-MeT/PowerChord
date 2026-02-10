@@ -1,143 +1,3 @@
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>sMV PowerChord (Sound Test v3.6.2)</title>
-  <link rel="stylesheet" href="./assets/css/styles.css">
-</head>
-<body>
-  <div class="app">
-    <div class="brandbar">
-      <a class="brandlink" href="https://shortmusicvideos.com" target="_blank" rel="noopener">
-        <img src="./assets/img/smv.png" alt="sMV" />
-      </a>
-      <div class="brandcenter" title="PowerChord">
-        <img src="./assets/img/powerchord.png" alt="PowerChord" />
-      </div>
-      <a class="brandlink" href="https://thsulli-met.github.io/Power-Mix/" target="_blank" rel="noopener">
-        <img src="./assets/img/powermix.png" alt="Power Mix" />
-      </a>
-    </div>
-
-    
-<header class="topHeader noLearn">
-  <div class="headerLeft">
-    <div class="title">sMV PowerChord — Sound Test v3.6.2 (24-pad UI sanity)</div>
-    <div class="hint">Pads: A S D F G H J K • Space: Play/Stop • R: Record • C: Clear armed</div>
-  </div>
-</header>
-<div class="sanityBanner">✅ UI SANITY CHECK: This build MUST show <b>24 pads</b> (16 chords + 8 drums). If you don't see them, you're not loading this folder.</div>
-
-
-
-    <section class="timeline">
-      <div class="lane">
-        <div class="laneTop">
-          <div>Looper</div>
-          <div id="loopInfo">Loop: 4 bars • Quantize: ON</div>
-        </div>
-        <div class="blocks" id="blocks">
-          <div class="ticks" id="ticks"></div>
-          <div class="loopBadge" id="loopBadge">EMPTY</div>
-          <div class="playhead" id="playhead"></div>
-        </div>
-
-        <div class="tracksHeader">
-          <div class="tracksTitle">Tracks</div>
-          <div class="tracksActions">
-            <button class="btn" id="addTrackBtn">＋ Track</button>
-            <button class="btn" id="clearAllBtn">Clear All</button>
-          </div>
-        </div>
-
-        <div id="tracks" class="tracks"></div>
-      </div>
-    </section>
-
-    
-<section class="controls controlsBar">
-  <div class="transportBar">
-    <button class="btn primary" id="playBtn">▶</button>
-    <button class="btn danger" id="stopBtn">■</button>
-    <button class="btn" id="recBtn">●</button>
-    <button class="btn" id="exportBtn">⬇ WAV</button>
-    <button class="btn danger" id="panicBtn">⛔</button>
-
-    <div class="patternBox" title="Fill a drum track with a starter groove">
-      <div class="miniLabel">Drums</div>
-      <div class="patternBtns">
-        <button class="btn" id="rockBtn">Rock</button>
-        <button class="btn" id="hiphopBtn">HipHop</button>
-      </div>
-    </div>
-
-    <div class="mini"><div class="miniLabel">BPM</div><input id="bpm" type="number" min="60" max="180" value="100"/></div>
-    <div class="mini"><div class="miniLabel">Bars</div><select id="barsSel">
-      <option value="1">1</option><option value="2">2</option><option value="4" selected>4</option>
-      <option value="8">8</option><option value="16">16</option><option value="32">32</option></select></div>
-    <div class="mini"><div class="miniLabel">Key</div><select id="keySel">
-      <option value="C" selected>C</option><option value="C#">C#</option><option value="D">D</option><option value="D#">D#</option>
-      <option value="E">E</option><option value="F">F</option><option value="F#">F#</option><option value="G">G</option>
-      <option value="G#">G#</option><option value="A">A</option><option value="A#">A#</option><option value="B">B</option></select></div>
-    <div class="mini"><div class="miniLabel">Room</div><input id="rev" type="range" min="0" max="1" step="0.01" value="0.22"/></div>
-
-    <label class="miniCheck" title="Output limiter + auto-duck"><input id="safeMode" type="checkbox" checked/><span>Safe</span></label>
-    <div class="audioState" id="audioState">Audio: off</div>
-  </div>
-</section>
-
-
-    
-    <section class="vizRow">
-      <div class="vizLeft">
-        <div class="vizTitle">Output</div>
-        <canvas id="meter" width="420" height="18"></canvas>
-      </div>
-      <div class="vizRight">
-        <div class="vizTitle">Spectrum</div>
-        <canvas id="spectrum" width="420" height="70"></canvas>
-      </div>
-    
-<div class="vizLearn">
-  <div class="vizTitle">Circle of Fifths</div>
-  <div class="learnChord" id="learnChord">—</div>
-  <svg id="circleSvg" viewBox="0 0 220 220" role="img" aria-label="Circle of Fifths diagram"></svg>
-</div>
-
-    </section>
-<section class="padsWrap">
-      <div class="pads" id="pads"></div>
-    </section>
-
-    <div class="subbar">
-      <div class="status">
-        <span class="pill" id="audioState">Audio: off (click a pad)</span>
-        <span class="pill" id="modePill">Mode: Play</span>
-        <span class="pill" id="armedPill">Armed: Track 1</span>
-        <span class="pill" id="lastChord">Last: —</span>
-      </div>
-      <div class="pill">Hold pads to sustain • Bounce exports one loop cycle</div>
-    </div>
-  </div>
-
-  <script src="./assets/js/app.js"></script>
-
-<script>
-(function() {
-  const errBox = document.getElementById("audioState");
-  function showErr(e){
-    const msg = (e && (e.stack || e.message)) ? (e.stack || e.message) : String(e);
-    if (errBox) errBox.textContent = "Error: " + msg;
-  }
-  window.addEventListener("error", (ev)=>{
-    // Try to surface something better than Script error.
-    if (ev && ev.error) showErr(ev.error);
-    else if (errBox) errBox.textContent = "Error: " + (ev.message || "Unknown");
-  });
-  window.addEventListener("unhandledrejection", (ev)=>{ showErr(ev.reason); });
-
-  try {
 window.onerror = function(msg, src, line, col){
   try{ const el=document.getElementById('audioState'); if(el) el.textContent = 'Error: ' + msg + ' @' + line + ':' + col; }catch(_){ }
 };
@@ -238,8 +98,6 @@ const bpmEl  = document.getElementById("bpm");
 const barsSel= document.getElementById("barsSel");
 const revEl  = document.getElementById("rev");
 const learnChordEl = document.getElementById("learnChord");
-const meterEl = document.getElementById("meter");
-const analyzerEl = document.getElementById("analyzer");
 const circleSvg = document.getElementById("circleSvg");
 
 const playBtn= document.getElementById("playBtn");
@@ -1058,35 +916,6 @@ function setChordDisplay(chordObj){
   if (s) s.textContent = prettyAccidentals(chordObj?.keyName || keySel?.value || "");
 }
 
-function renderPads(){
-
-  const armed = getArmedTrack();
-  const drumMode = armed && armed.role === "drums";
-  if (padModeLabel) padModeLabel.textContent = drumMode ? "DRUM MODE" : "CHORD MODE";
-  const drumNames = ["Kick","Snare","Hat","Hat","Clap","Snare","Kick","Hat"];
-  padsEl.innerHTML = "";
-  padButtons = [];
-  for (let i = 0; i < 8; i++){
-    const c = chordForPad(i, keySel.value);
-    const btn = document.createElement("div");
-    btn.className = "pad";
-    btn.style.background = PAD_COLORS[i];
-    btn.innerHTML = `
-      <div class="kbd">${KBD_KEYS[i]}</div>
-      <div class="name">${c.label}</div>
-      <div class="notes">${c.notes}</div>
-    `;
-    btn.addEventListener("pointerdown", (ev) => {
-      ev.preventDefault();
-      btn.setPointerCapture(ev.pointerId);
-      padHoldStart(i, ev.pointerId);
-    });
-    btn.addEventListener("pointerup", (ev) => { ev.preventDefault(); padHoldEnd(ev.pointerId); });
-    btn.addEventListener("pointercancel", (ev) => padHoldEnd(ev.pointerId));
-    padsEl.appendChild(btn);
-    padButtons.push(btn);
-  }
-}
 
 function setPadActive(i, on){
   const el = padButtons[i];
@@ -1122,8 +951,8 @@ const ROLES = [
 
 
 function ensureDrumTrack(){
-  const armed = tracks.find(t=>t.id===armedTrackId);
   // prefer armed if already drums
+  const armed = tracks.find(t=>t.id===armedTrackId);
   if (armed && armed.role==="drums") return armed;
 
   let dt = tracks.find(t=>t.role==="drums");
@@ -1139,6 +968,7 @@ function ensureDrumTrack(){
   renderTracks();
   return dt;
 }
+
 function applyDrumPattern(kind){
   const t = ensureDrumTrack();
   t.events = [];
@@ -1198,7 +1028,6 @@ function setArmedTrack(id){
   const idx = tracks.findIndex(t => t.id === id);
   armedPill.textContent = `Armed: Track ${idx >= 0 ? (idx+1) : 1}`;
   renderTracks();
-  updatePadModeLabel();
 }
 
 function clearTrack(id){
@@ -1439,36 +1268,24 @@ renderTicks();
 
 // record + sustain
 function padHoldStart(padIndex, pointerId){
-  const armed = getArmedTrack();
   ensureAudio();
   if (ac.state === "suspended") ac.resume();
-
 
   setPadActive(padIndex, true);
 
   const chordObj = chordForPad(padIndex, keySel.value);
   // drums: play one-shot instead of chord stack
-
   if (armed && armed.role === "drums") {
     const type = DRUM_PAD_MAP[padIndex % DRUM_PAD_MAP.length] || "hat";
     drumHit(ctx, dry, wet, type, ctx.currentTime, armed.vol, armed.rev);
-    activeHolds.set(pointerId, { stopFn: ()=>{}, padIndex });
-    if (isRecording && isPlaying){
-      const b = nowBeats();
-      const q = quantizeBeat(b, 0.25) % loopBeats();
-      const id = nextEventId++;
-      armed.events.push({ id, tBeats: q, padIndex, dBeats: 0.25 });
-      updateLoopBadge();
-      renderTracks();
-    }
-    return;
+    // recording handled below; no sustain
   }
-
   lastChord.textContent = `Last: ${chordObj.label}`;
-  highlightKeyOnCircle(chordObj.rootName || keySel.value);
+  highlightKeyOnCircle(keySel.value);
   setChordDisplay(chordObj);
 
-  const role = armed ? armed && armed.role : "chord";
+  const armed = getArmedTrack();
+  const role = armed ? armed.role : "chord";
   const vol  = armed ? armed.vol : 1.0;
 
   // Live monitoring matches armed role + volume (so record/playback/export feel the same)
@@ -1489,6 +1306,7 @@ function padHoldStart(padIndex, pointerId){
     renderTracks();
   }
 }
+
 function padHoldEnd(pointerId){
   const hold = activeHolds.get(pointerId);
   if (!hold) return;
@@ -1701,7 +1519,6 @@ window.addEventListener("keydown", (e) => {
 
 // init
 renderPads();
-  updatePadModeLabel();
   initCircleOfFifths();
   highlightKeyOnCircle(keySel.value);
   setChordDisplay(chordForPad(0, keySel.value));
@@ -1712,86 +1529,92 @@ loopInfo.textContent = `Loop: ${bars()} bars • Quantize: ON`;
 
 document.body.addEventListener('pointerdown', () => { try{ ensureAudio(); if(ac && ac.state==='suspended') ac.resume(); }catch(_){ } }, { once:false });
 
+function buildPad(el, keyLabel, nameLabel, isDrum=false){
+  const d = document.createElement("div");
+  d.className = "pad" + (isDrum ? " drum" : "");
+  d.innerHTML = `
+    <div class="padKey">${keyLabel}</div>
+    <div class="padName">${nameLabel}</div>
+    <div class="padNotes"></div>
+  `;
+  el.appendChild(d);
+  return d;
+}
 
-function updatePadModeLabel(){
-  const el = document.getElementById("padModeLabel");
-  if (!el) return;
-  const t = tracks.find(x=>x.id===armedTrackId);
-  const isDrum = t && t.role === "drums";
-  el.textContent = isDrum ? "DRUM MODE" : "CHORD MODE";
-  el.classList.toggle("drum", !!isDrum);
-  // relabel pads
-  const padEls = document.querySelectorAll(".pad");
-  if (!padEls || !padEls.length) return;
-  padEls.forEach((p, i)=>{
-    const key = PAD_KEYS[i] ? PAD_KEYS[i].toUpperCase() : "";
-    if (isDrum){
-      const names = ["Kick","Snare","Hat","Hat","Clap","Snare","Kick","Hat"];
-      const nm = names[i] || "Hit";
-      p.querySelector(".padKey").textContent = key;
-      p.querySelector(".padName").textContent = nm;
-    } else {
-      // re-render pads from current key selection
-      // cheapest: call renderPads()
-      // (renderPads exists globally)
-    }
+// v3.6.2: ALWAYS render 24 pads, no conditional logic.
+function renderPads(){
+  const maj = document.getElementById("padGridMaj");
+  const min = document.getElementById("padGridMin");
+  const dr  = document.getElementById("padGridDrums");
+  const ctr = document.getElementById("padCounter");
+  if(!maj || !min || !dr) return;
+
+  maj.innerHTML=""; min.innerHTML=""; dr.innerHTML="";
+
+  // Use the existing circle-of-fifths order already used by the SVG panel if available,
+  // but keep it simple: majors = C G D A E B F# C# (rotated by current key)
+  const base = ["C","G","D","A","E","B","F#","C#","G#","D#","A#","F"];
+  const k = prettyAccidentals(keySel.value || "C");
+  const idx = base.indexOf(k.replaceAll("♯","#")) >= 0 ? base.indexOf(k.replaceAll("♯","#")) : base.indexOf("C");
+  const rot = base.slice(idx).concat(base.slice(0, idx)).slice(0, 8);
+
+  const majPads = [];
+  const minPads = [];
+  const drumPads = [];
+
+  rot.forEach((rk,i)=>{
+    const key = PAD_KEYS[i].toUpperCase();
+    const label = chordSymbol(rk, "maj");
+    const p = buildPad(maj, key, label, false);
+    p.dataset.kind="chord"; p.dataset.padIndex=String(i); p.dataset.qual="maj"; p.dataset.root=rk;
+    majPads.push(p);
   });
-}
 
-  
-function startViz(){
-  if (rafViz) return;
-  const mctx = meterEl ? meterEl.getContext("2d") : null;
-  const actx = analyzerEl ? analyzerEl.getContext("2d") : null;
+  rot.forEach((rk,i)=>{
+    const key = PAD2_KEYS[i].toUpperCase();
+    const label = chordSymbol(rk, "min");
+    const p = buildPad(min, key, label, false);
+    p.dataset.kind="chord"; p.dataset.padIndex=String(i); p.dataset.qual="min"; p.dataset.root=rk;
+    minPads.push(p);
+  });
 
-  function frame(){
-    rafViz = requestAnimationFrame(frame);
-    if (!analyser) return;
+  DRUM_LABELS.forEach((nm,i)=>{
+    const key = DRUM_KEYS[i].toUpperCase();
+    const p = buildPad(dr, key, nm, true);
+    p.dataset.kind="drum"; p.dataset.drumIndex=String(i);
+    drumPads.push(p);
+  });
 
-    // meter (RMS-ish from time domain)
-    if (mctx && meterEl){
-      analyser.getByteTimeDomainData(meterData);
-      let sum=0;
-      for (let i=0;i<meterData.length;i++){
-        const x = (meterData[i]-128)/128;
-        sum += x*x;
+  // bind chord clicks (use existing playScheduled path, fallback to simple osc if needed)
+  [...majPads, ...minPads].forEach(p=>{
+    p.onmousedown = (ev)=>{
+      ensureAudio();
+      const root = p.dataset.root;
+      const qual = p.dataset.qual;
+      const midiRoot = midiForName(prettyAccidentals(root), 4);
+      const freqs = TRIADS[qual].map(o => midiToHz(midiRoot + o));
+      playScheduled(ac, dry, wet, freqs, ac.currentTime, 1.0, 1.0, instrumentSel.value || "warm_pad", false, +revEl.value || 0.15);
+      setChordDisplay({symbol: chordSymbol(root, qual), rootName: root, keyName: keySel.value});
+      highlightKeyOnCircle(prettyAccidentals(root));
+    };
+  });
+
+  // bind drum clicks (fallback)
+  drumPads.forEach(p=>{
+    p.onmousedown = (ev)=>{
+      ensureAudio();
+      const i = Number(p.dataset.drumIndex||0);
+      const t = ac.currentTime;
+      const type = DRUM_TYPES[i] || "hat";
+      if (typeof drumHit === "function"){
+        drumHit(ac, dry, wet, type, t, 1.0, +revEl.value || 0.08);
+      } else {
+        drumHitFallback(ac, t, type, 0.9);
       }
-      const rms = Math.sqrt(sum / meterData.length); // 0..~1
-      const w = meterEl.width, h = meterEl.height;
-      mctx.clearRect(0,0,w,h);
-      // background
-      mctx.fillStyle = "rgba(255,255,255,.08)";
-      mctx.fillRect(0,0,w,h);
-      // bar
-      mctx.fillStyle = "rgba(59,130,246,.80)";
-      mctx.fillRect(0,0,Math.max(2, Math.min(w, rms*w*2.2)),h);
-    }
+      if (learnChordEl) learnChordEl.textContent = DRUM_LABELS[i] || "Drum";
+    };
+  });
 
-    // spectrum
-    if (actx && analyzerEl){
-      analyser.getByteFrequencyData(analyserData);
-      const w = analyzerEl.width, h = analyzerEl.height;
-      actx.clearRect(0,0,w,h);
-      actx.fillStyle = "rgba(255,255,255,.08)";
-      actx.fillRect(0,0,w,h);
-      actx.fillStyle = "rgba(255,255,255,.72)";
-      const n = analyserData.length;
-      const step = Math.max(1, Math.floor(n / w));
-      for (let x=0; x<w; x++){
-        const idx = x*step;
-        const v = analyserData[idx] / 255;
-        const bh = Math.max(1, v*h);
-        actx.fillRect(x, h-bh, 1, bh);
-      }
-    }
-  }
-  frame();
+  if (ctr) ctr.textContent = `Pads rendered: ${majPads.length + minPads.length + drumPads.length} (expected 24)`;
+  console.log("[v3.6.2] renderPads complete", {maj:majPads.length, min:minPads.length, drums:drumPads.length});
 }
-} catch (e) {
-    showErr(e);
-  }
-})();
-</script>
-
-</body>
-</html>
