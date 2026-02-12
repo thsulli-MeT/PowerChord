@@ -114,7 +114,7 @@ const barsSel= document.getElementById("barsSel");
 const revEl  = document.getElementById("rev");
 const learnChordEl = document.getElementById("learnChord");
 const meterEl = document.getElementById("meter");
-const analyzerEl = document.getElementById("analyzer");
+const analyzerEl = document.getElementById("analyzer") || document.getElementById("spectrum");
 const circleSvg = document.getElementById("circleSvg");
 
 const playBtn= document.getElementById("playBtn");
@@ -175,6 +175,13 @@ let master = null;
 let wet = null, dry = null;
 let convolver = null;
 let activeVoiceStops = new Set();
+let rafViz = null;
+const meterData = new Uint8Array(1024);
+const analyserData = new Uint8Array(1024);
+
+function safeOn(el, evt, handler){
+  if (el) el.addEventListener(evt, handler);
+}
 
 // Transport
 let isPlaying = false;
@@ -1356,7 +1363,7 @@ function scheduleLoopPlayback(){
   if (!ac) return;
 
   updateLoopBadge();
-  loopInfo.textContent = `Loop: ${bars()} bars • Quantize: ON`;
+  if (loopInfo) loopInfo.textContent = `Loop: ${bars()} bars • Quantize: ON`;
 renderTicks();
 
   playTimer = setInterval(() => {
@@ -1655,25 +1662,25 @@ if (safeModeEl){
 }
 
 // controls
-playBtn.addEventListener("click", () => {
+safeOn(playBtn, "click", () => {
   ensureMasterAudible(); if (!isPlaying) start(); });
-stopBtn.addEventListener("click", stop);
-recBtn.addEventListener("click", toggleRecord);
+safeOn(stopBtn, "click", stop);
+safeOn(recBtn, "click", toggleRecord);
 
-keySel.addEventListener("change", () => renderPads());
-bpmEl.addEventListener("change", () => { bpmEl.value = String(bpm()); if (isPlaying) scheduleLoopPlayback(); });
-barsSel.addEventListener("change", () => {
+safeOn(keySel, "change", () => renderPads());
+safeOn(bpmEl, "change", () => { bpmEl.value = String(bpm()); if (isPlaying) scheduleLoopPlayback(); });
+safeOn(barsSel, "change", () => {
   const lb = loopBeats();
   tracks.forEach(t => { t.events = t.events.map(e => ({...e, tBeats: e.tBeats % lb, dBeats: Math.min(e.dBeats ?? 1.0, lb) })); t.lastScheduledAbs = {}; });
   if (isPlaying) scheduleLoopPlayback();
-  loopInfo.textContent = `Loop: ${bars()} bars • Quantize: ON`;
+  if (loopInfo) loopInfo.textContent = `Loop: ${bars()} bars • Quantize: ON`;
   renderTicks();
 });
-revEl.addEventListener("input", () => { if (wet) wet.gain.value = parseFloat(revEl.value); });
+safeOn(revEl, "input", () => { if (wet) wet.gain.value = parseFloat(revEl.value); });
 
-addTrackBtn.addEventListener("click", () => addTrack());
-clearAllBtn.addEventListener("click", () => clearAll());
-exportBtn.addEventListener("click", () => bounceWav());
+safeOn(addTrackBtn, "click", () => addTrack());
+safeOn(clearAllBtn, "click", () => clearAll());
+safeOn(exportBtn, "click", () => bounceWav());
 if (panicBtn){
   panicBtn.addEventListener("click", ()=>{
     try{ stop(); }catch(_){ }
@@ -1712,12 +1719,14 @@ window.addEventListener("keydown", (e) => {
 
 // init
 renderPads();
-  initCircleOfFifths();
+initCircleOfFifths();
+if (keySel){
   highlightKeyOnCircle(keySel.value);
   setChordDisplay(chordForPad(0, keySel.value));
+}
 addTrack("Track 1");
 updateLoopBadge();
-loopInfo.textContent = `Loop: ${bars()} bars • Quantize: ON`;
+if (loopInfo) loopInfo.textContent = `Loop: ${bars()} bars • Quantize: ON`;
 
 
 document.body.addEventListener('pointerdown', () => { try{ ensureAudio(); if(ac && ac.state==='suspended') ac.resume(); }catch(_){ } }, { once:false });
