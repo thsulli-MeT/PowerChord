@@ -1706,11 +1706,7 @@ safeOn(playBtn, "click", () => {
 safeOn(stopBtn, "click", stop);
 safeOn(recBtn, "click", toggleRecord);
 
-safeOn(keySel, "change", () => {
-  renderPads();
-  highlightKeyOnCircle(keySel.value);
-  setChordDisplay(chordForPad(0, keySel.value));
-});
+safeOn(keySel, "change", () => renderPads());
 safeOn(bpmEl, "change", () => { bpmEl.value = String(bpm()); if (isPlaying) scheduleLoopPlayback(); });
 safeOn(barsSel, "change", () => {
   const lb = loopBeats();
