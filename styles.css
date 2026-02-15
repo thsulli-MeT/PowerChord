@@ -494,3 +494,32 @@ canvas{
 .pad{ height: 78px; }
 .pad.drum{ background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.08); }
 
+
+/* v4.2 compact track row + stronger pad glow */
+.trackRow{
+  grid-template-columns: 220px 1fr auto !important;
+  gap: 10px;
+  align-items: center;
+}
+.trackCtlInline{
+  display:flex !important;
+  gap:10px;
+  align-items:flex-end;
+  flex-wrap:nowrap;
+  overflow-x:auto;
+  padding-bottom: 2px;
+}
+.trackCtlInline > div{ min-width: 90px; }
+.trackCtlInline select{ width: 120px; }
+.trackCtlInline input[type="range"]{ width: 100px; }
+.trackBtns{ flex-wrap: nowrap; }
+
+.pad.active {
+  filter: brightness(1.38) saturate(1.2);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.45), 0 0 24px rgba(96,165,250,.42);
+}
+
+@media (max-width: 1100px){
+  .trackRow{ grid-template-columns: 1fr !important; align-items: stretch; }
+  .trackCtlInline{ flex-wrap: wrap; overflow: visible; }
+}

@@ -176,6 +176,8 @@ let master = null;
 let wet = null, dry = null;
 let convolver = null;
 let activeVoiceStops = new Set();
+let micInputSource = null;
+let micInputStream = null;
 let rafViz = null;
 const meterData = new Uint8Array(1024);
 const analyserData = new Uint8Array(1024);
@@ -1134,6 +1136,7 @@ const INSTRUMENTS = [
   { value:"electric_guitar", label:"Electric Guitar", supportsStrum:true  },
   { value:"bass_guitar",     label:"Bass Guitar",     supportsStrum:false },
   { value:"drum_kit", label:"Drum Kit", supportsStrum:false },
+  { value:"microphone", label:"Microphone", supportsStrum:false },
 ];
 
 function instrumentMeta(id){
@@ -1145,7 +1148,84 @@ const ROLES = [
   { value:"bass",  label:"Bass" },
   { value:"lead",  label:"Lead" },
   { value:"drums", label:"Drums" },
+  { value:"mic",   label:"Mic" },
 ];
+
+
+async function ensureMicSource(){
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+    throw new Error("Microphone input not supported in this browser.");
+  }
+  ensureAudio();
+  if (ac.state === "suspended") ac.resume();
+  if (micInputSource) return micInputSource;
+  micInputStream = await navigator.mediaDevices.getUserMedia({ audio:true });
+  micInputSource = ac.createMediaStreamSource(micInputStream);
+  return micInputSource;
+}
+
+function clearMicNodes(t){
+  if (!t || !t.micNodes) return;
+  try{ Object.values(t.micNodes).forEach(n => n && n.disconnect && n.disconnect()); }catch(_){ }
+  t.micNodes = null;
+}
+
+function rebuildMicRouting(){
+  tracks.forEach(t => clearMicNodes(t));
+  if (!ac || !dry || !wet) return;
+
+  tracks.forEach(t => {
+    if (t.role !== "mic" || t.muted) return;
+    ensureMicSource().then(src => {
+      if (!ac || t.role !== "mic" || t.muted) return;
+
+      const inG = ac.createGain();
+      const compN = ac.createDynamicsCompressor();
+      const tuneN = ac.createBiquadFilter();
+      const dly = ac.createDelay(1.0);
+      const dlyFb = ac.createGain();
+      const outDry = ac.createGain();
+      const outWet = ac.createGain();
+
+      const fx = t.micFx || { rev:0.25, delay:0.12, comp:0.30, tune:0.15 };
+
+      inG.gain.value = Math.max(0, t.vol ?? 1.0);
+      compN.threshold.value = -34 + (fx.comp * 22);
+      compN.ratio.value = 2 + (fx.comp * 8);
+      compN.attack.value = 0.01;
+      compN.release.value = 0.16;
+
+      tuneN.type = "peaking";
+      tuneN.frequency.value = 900 + (fx.tune * 2200);
+      tuneN.Q.value = 1.2 + (fx.tune * 3);
+      tuneN.gain.value = fx.tune * 10;
+
+      dly.delayTime.value = 0.03 + (fx.delay * 0.28);
+      dlyFb.gain.value = fx.delay * 0.35;
+
+      outDry.gain.value = 1.0;
+      outWet.gain.value = fx.rev;
+
+      src.connect(inG);
+      inG.connect(compN);
+      compN.connect(tuneN);
+      tuneN.connect(outDry);
+      tuneN.connect(dly);
+      dly.connect(dlyFb);
+      dlyFb.connect(dly);
+      dly.connect(outDry);
+      tuneN.connect(outWet);
+      outDry.connect(dry);
+      outWet.connect(wet);
+
+      t.micNodes = { inG, compN, tuneN, dly, dlyFb, outDry, outWet };
+    }).catch(err => {
+      setAudioStateText("Mic unavailable");
+      console.warn(err);
+    });
+  });
+}
+
 
 
 function ensureDrumTrack(){
@@ -1208,7 +1288,7 @@ function applyDrumPattern(kind){
 function addTrack(name){
   const id = uid();
   const color = TRACK_COLORS[tracks.length % TRACK_COLORS.length];
-  const t = { id, name: name ?? `Track ${tracks.length + 1}`, color, role:"chord", instrument:"classic_piano", strum:false, rev:0.22, events: [], muted:false, armed:false, vol:1.00, lastScheduledAbs:{} };
+  const t = { id, name: name ?? `Track ${tracks.length + 1}`, color, role:"chord", instrument:"classic_piano", strum:false, rev:0.22, micFx:{ rev:0.25, delay:0.12, comp:0.30, tune:0.15 }, events: [], muted:false, armed:false, vol:1.00, lastScheduledAbs:{} };
   tracks.push(t);
   if (!armedTrackId) setArmedTrack(id);
   renderTracks();
@@ -1251,7 +1331,7 @@ function clearAll(){
 
 function renderTracks(){
   tracksEl.innerHTML = "";
-  tracks.forEach((t, i) => {
+  tracks.forEach((t) => {
     const row = document.createElement("div");
     row.className = "trackRow";
 
@@ -1265,12 +1345,9 @@ function renderTracks(){
       </div>
     `;
 
-    const mid1 = document.createElement("div");
-    mid1.className = "trackCtl";
-    mid1.style.display = "grid";
-    mid1.style.gap = "8px";
+    const controls = document.createElement("div");
+    controls.className = "trackCtl trackCtlInline";
 
-    // Role
     const roleSel = document.createElement("select");
     ROLES.forEach(r => {
       const opt = document.createElement("option");
@@ -1279,11 +1356,15 @@ function renderTracks(){
       if (t.role === r.value) opt.selected = true;
       roleSel.appendChild(opt);
     });
-    roleSel.addEventListener("change", () => { t.role = roleSel.value;
-      if (t.role === "drums") { t.instrument = "drum_kit"; t.strum = false; } });
-    mid1.appendChild(wrapCtl("Role", roleSel));
+    roleSel.addEventListener("change", () => {
+      t.role = roleSel.value;
+      if (t.role === "drums") { t.instrument = "drum_kit"; t.strum = false; }
+      if (t.role === "mic") { t.instrument = "microphone"; t.strum = false; }
+      renderTracks();
+      rebuildMicRouting();
+    });
+    controls.appendChild(wrapCtl("Role", roleSel));
 
-    // Instrument
     const instSel = document.createElement("select");
     INSTRUMENTS.forEach(r => {
       const opt = document.createElement("option");
@@ -1292,57 +1373,65 @@ function renderTracks(){
       if (t.instrument === r.value) opt.selected = true;
       instSel.appendChild(opt);
     });
+    instSel.disabled = (t.role === "mic");
     instSel.addEventListener("change", () => {
       t.instrument = instSel.value;
-      // if instrument doesn't support strum, turn it off
       const meta = instrumentMeta(t.instrument);
       if (!meta.supportsStrum) t.strum = false;
       renderTracks();
     });
-    mid1.appendChild(wrapCtl("Instrument", instSel));
+    controls.appendChild(wrapCtl("Instrument", instSel));
 
-    const mid2 = document.createElement("div");
-    mid2.className = "trackCtl";
-    mid2.style.display = "grid";
-    mid2.style.gap = "8px";
-
-    // Volume
     const vol = document.createElement("input");
     vol.type = "range"; vol.min = "0"; vol.max = "1"; vol.step = "0.01"; vol.value = String(t.vol);
-    vol.addEventListener("input", () => { t.vol = parseFloat(vol.value); });
-    mid2.appendChild(wrapCtl("Vol", vol));
+    vol.addEventListener("input", () => { t.vol = parseFloat(vol.value); rebuildMicRouting(); });
+    controls.appendChild(wrapCtl("Vol", vol));
 
-    // Reverb send
     const rv = document.createElement("input");
     rv.type = "range"; rv.min = "0"; rv.max = "1"; rv.step = "0.01"; rv.value = String(t.rev ?? 0.22);
     rv.addEventListener("input", () => { t.rev = parseFloat(rv.value); });
-    mid2.appendChild(wrapCtl("Rev", rv));
+    controls.appendChild(wrapCtl("Rev", rv));
 
-    // Strum
-    const strWrap = document.createElement("div");
-    strWrap.style.display = "flex";
-    strWrap.style.alignItems = "center";
-    strWrap.style.gap = "10px";
-    const str = document.createElement("input");
-    str.type = "checkbox";
-    str.checked = !!t.strum;
-    const meta = instrumentMeta(t.instrument);
-    str.disabled = !meta.supportsStrum;
-    str.addEventListener("change", () => { t.strum = !!str.checked; });
-    const strLab = document.createElement("div");
-    strLab.className = "smallLabel";
-    strLab.textContent = meta.supportsStrum ? "Strum" : "Strum (n/a)";
-    strWrap.appendChild(str);
-    strWrap.appendChild(strLab);
-    const strBox = document.createElement("div");
-    strBox.style.display = "grid";
-    strBox.style.gap = "6px";
-    const strTitle = document.createElement("div");
-    strTitle.className = "smallLabel";
-    strTitle.textContent = "Feel";
-    strBox.appendChild(strTitle);
-    strBox.appendChild(strWrap);
-    mid2.appendChild(strBox);
+    if (t.role === "mic"){
+      const fx = t.micFx || (t.micFx = { rev:0.25, delay:0.12, comp:0.30, tune:0.15 });
+
+      const micRev = document.createElement("input");
+      micRev.type = "range"; micRev.min = "0"; micRev.max = "1"; micRev.step = "0.01"; micRev.value = String(fx.rev);
+      micRev.addEventListener("input", () => { fx.rev = parseFloat(micRev.value); rebuildMicRouting(); });
+      controls.appendChild(wrapCtl("Mic Rev", micRev));
+
+      const micDly = document.createElement("input");
+      micDly.type = "range"; micDly.min = "0"; micDly.max = "1"; micDly.step = "0.01"; micDly.value = String(fx.delay);
+      micDly.addEventListener("input", () => { fx.delay = parseFloat(micDly.value); rebuildMicRouting(); });
+      controls.appendChild(wrapCtl("Delay", micDly));
+
+      const micComp = document.createElement("input");
+      micComp.type = "range"; micComp.min = "0"; micComp.max = "1"; micComp.step = "0.01"; micComp.value = String(fx.comp);
+      micComp.addEventListener("input", () => { fx.comp = parseFloat(micComp.value); rebuildMicRouting(); });
+      controls.appendChild(wrapCtl("Comp", micComp));
+
+      const micTune = document.createElement("input");
+      micTune.type = "range"; micTune.min = "0"; micTune.max = "1"; micTune.step = "0.01"; micTune.value = String(fx.tune);
+      micTune.addEventListener("input", () => { fx.tune = parseFloat(micTune.value); rebuildMicRouting(); });
+      controls.appendChild(wrapCtl("Tune", micTune));
+    } else {
+      const strWrap = document.createElement("div");
+      strWrap.style.display = "flex";
+      strWrap.style.alignItems = "center";
+      strWrap.style.gap = "8px";
+      const str = document.createElement("input");
+      str.type = "checkbox";
+      str.checked = !!t.strum;
+      const meta = instrumentMeta(t.instrument);
+      str.disabled = !meta.supportsStrum;
+      str.addEventListener("change", () => { t.strum = !!str.checked; });
+      const strLab = document.createElement("div");
+      strLab.className = "smallLabel";
+      strLab.textContent = meta.supportsStrum ? "Strum" : "Strum (n/a)";
+      strWrap.appendChild(str);
+      strWrap.appendChild(strLab);
+      controls.appendChild(wrapCtl("Feel", strWrap));
+    }
 
     const btns = document.createElement("div");
     btns.className = "trackBtns";
@@ -1353,16 +1442,18 @@ function renderTracks(){
     `;
     const [armBtn, muteBtn, clearBtn] = btns.querySelectorAll("button");
     armBtn.addEventListener("click", () => setArmedTrack(t.id));
-    muteBtn.addEventListener("click", () => toggleMute(t.id));
+    muteBtn.addEventListener("click", () => { toggleMute(t.id); rebuildMicRouting(); });
     clearBtn.addEventListener("click", () => clearTrack(t.id));
 
     row.appendChild(left);
-    row.appendChild(mid1);
-    row.appendChild(mid2);
+    row.appendChild(controls);
     row.appendChild(btns);
     tracksEl.appendChild(row);
   });
+
+  rebuildMicRouting();
 }
+
 
 function wrapCtl(label, el){
   const box = document.createElement("div");
@@ -1435,6 +1526,9 @@ renderTicks();
 
           const when = tNow + (delta / bps);
           
+          if (track.role === "mic") {
+            return;
+          }
           if (track.role === "drums") {
             const type = DRUM_PAD_MAP[ev.padIndex % DRUM_PAD_MAP.length] || "hat";
             drumHit(ac, dry, wet, type, when, track.vol, track.rev);
@@ -1499,8 +1593,8 @@ function padHoldStart(padIndex, pointerId){
 
   // If the armed track is drums, auto-arm the first non-drum track (or create one)
   let target = armed;
-  if (target && target.role === "drums"){
-    target = tracks.find(t => t.role !== "drums") || null;
+  if (target && (target.role === "drums" || target.role === "mic")){
+    target = tracks.find(t => t.role !== "drums" && t.role !== "mic") || null;
     if (!target){
       addTrack("Track 1");
       target = tracks[tracks.length-1];
@@ -1706,6 +1800,11 @@ safeOn(playBtn, "click", () => {
 safeOn(stopBtn, "click", stop);
 safeOn(recBtn, "click", toggleRecord);
 
+safeOn(keySel, "change", () => {
+  renderPads();
+  highlightKeyOnCircle(keySel.value);
+  setChordDisplay(chordForPad(0, keySel.value));
+});
 safeOn(keySel, "change", () => renderPads());
 safeOn(bpmEl, "change", () => { bpmEl.value = String(bpm()); if (isPlaying) scheduleLoopPlayback(); });
 safeOn(barsSel, "change", () => {
