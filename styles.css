@@ -369,6 +369,9 @@ canvas{
 #circleSvg{ width: 100%; height: auto; display:block; }
 .c5-seg{ fill: rgba(255,255,255,.06); stroke: rgba(255,255,255,.10); stroke-width: 1; transition: .12s; }
 .c5-seg.active{ fill: rgba(59,130,246,.28); stroke: rgba(59,130,246,.55); }
+.c5-min{ fill: rgba(16,185,129,.10); }
+.c5-min.active{ fill: rgba(16,185,129,.34); stroke: rgba(16,185,129,.65); }
+.c5-seg:hover{ filter: brightness(1.15); }
 .c5-text{ fill: rgba(255,255,255,.78); font-size: 12px; font-weight: 700; }
 .c5-center{
   fill: rgba(255,255,255,.88);
@@ -491,3 +494,32 @@ canvas{
 .pad{ height: 78px; }
 .pad.drum{ background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.08); }
 
+
+/* v4.2 compact track row + stronger pad glow */
+.trackRow{
+  grid-template-columns: 220px 1fr auto !important;
+  gap: 10px;
+  align-items: center;
+}
+.trackCtlInline{
+  display:flex !important;
+  gap:10px;
+  align-items:flex-end;
+  flex-wrap:nowrap;
+  overflow-x:auto;
+  padding-bottom: 2px;
+}
+.trackCtlInline > div{ min-width: 90px; }
+.trackCtlInline select{ width: 120px; }
+.trackCtlInline input[type="range"]{ width: 100px; }
+.trackBtns{ flex-wrap: nowrap; }
+
+.pad.active {
+  filter: brightness(1.38) saturate(1.2);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.45), 0 0 24px rgba(96,165,250,.42);
+}
+
+@media (max-width: 1100px){
+  .trackRow{ grid-template-columns: 1fr !important; align-items: stretch; }
+  .trackCtlInline{ flex-wrap: wrap; overflow: visible; }
+}
