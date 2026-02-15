@@ -369,6 +369,9 @@ canvas{
 #circleSvg{ width: 100%; height: auto; display:block; }
 .c5-seg{ fill: rgba(255,255,255,.06); stroke: rgba(255,255,255,.10); stroke-width: 1; transition: .12s; }
 .c5-seg.active{ fill: rgba(59,130,246,.28); stroke: rgba(59,130,246,.55); }
+.c5-min{ fill: rgba(16,185,129,.10); }
+.c5-min.active{ fill: rgba(16,185,129,.34); stroke: rgba(16,185,129,.65); }
+.c5-seg:hover{ filter: brightness(1.15); }
 .c5-text{ fill: rgba(255,255,255,.78); font-size: 12px; font-weight: 700; }
 .c5-center{
   fill: rgba(255,255,255,.88);
