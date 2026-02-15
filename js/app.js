@@ -89,6 +89,7 @@ function chordSymbol(rootName, qual){
 
 
 const KBD_KEYS = ["A","S","D","F","G","H","J","K","Q","W","E","R","T","Y","U","I","Z","X","C","V","B","N","M",","];
+const DRUM_PAD_MAP = ["kick","snare","hat","openhat","clap","tom","rim","crash"];
 const PAD_COLORS = [
   "linear-gradient(135deg, rgba(59,130,246,.45), rgba(59,130,246,.14))",
   "linear-gradient(135deg, rgba(16,185,129,.45), rgba(16,185,129,.14))",
@@ -114,7 +115,7 @@ const barsSel= document.getElementById("barsSel");
 const revEl  = document.getElementById("rev");
 const learnChordEl = document.getElementById("learnChord");
 const meterEl = document.getElementById("meter");
-const analyzerEl = document.getElementById("analyzer");
+const analyzerEl = document.getElementById("analyzer") || document.getElementById("spectrum");
 const circleSvg = document.getElementById("circleSvg");
 
 const playBtn= document.getElementById("playBtn");
@@ -175,6 +176,13 @@ let master = null;
 let wet = null, dry = null;
 let convolver = null;
 let activeVoiceStops = new Set();
+let rafViz = null;
+const meterData = new Uint8Array(1024);
+const analyserData = new Uint8Array(1024);
+
+function safeOn(el, evt, handler){
+  if (el) el.addEventListener(evt, handler);
+}
 
 // Transport
 let isPlaying = false;
@@ -191,6 +199,7 @@ let armedTrackId = null;
 let padButtons = [];
 let activeHolds = new Map(); // pointerId -> { stopFn, recEventId?, trackId?, startBeat? }
 let nextEventId = 1;
+let padIndexByChord = new Map();
 
 // helpers
 function clamp(v,a,b){ return Math.min(b, Math.max(a,v)); }
@@ -932,7 +941,7 @@ function freqsForRole(role, chordObj){
 
 const C5_KEYS = ["C","G","D","A","E","B","F#","C#","G#","D#","A#","F"].map(prettyAccidentals);
 const C5_MAP_RAW = {"C":"C","G":"G","D":"D","A":"A","E":"E","B":"B","F#":"F♯","C#":"C♯","G#":"G♯","D#":"D♯","A#":"A♯","F":"F"};
-let c5SegByKey = {};
+let c5SegByKey = { maj:{}, min:{} };
 
 function polar(cx, cy, r, ang){
   return [cx + r*Math.cos(ang), cy + r*Math.sin(ang)];
@@ -947,12 +956,27 @@ function arcPath(cx, cy, r0, r1, a0, a1){
   return `M ${x0} ${y0} A ${r1} ${r1} 0 ${large} 1 ${x1} ${y1} L ${x2} ${y2} A ${r0} ${r0} 0 ${large} 0 ${x3} ${y3} Z`;
 }
 
+function chordLookupKey(rootName, qual){
+  return `${prettyAccidentals(rootName)}|${qual === "min" ? "min" : "maj"}`;
+}
+
+function triggerPadFromCircle(rootNamePretty, qual){
+  const idx = padIndexByChord.get(`${rootNamePretty}|${qual}`);
+  if (idx == null) return;
+  const pid = `c5-${rootNamePretty}-${qual}-${Date.now()}`;
+  setPadActive(idx, true);
+  padHoldStart(idx, pid);
+  setTimeout(() => padHoldEnd(pid), 220);
+}
+
 function initCircleOfFifths(){
   if (!circleSvg) return;
   circleSvg.innerHTML = "";
-  c5SegByKey = {};
+  c5SegByKey = { maj:{}, min:{} };
 
-  const cx=110, cy=110, r0=58, r1=102;
+  const cx=110, cy=110;
+  const outerIn=72, outerOut=102;
+  const innerIn=46, innerOut=70;
   const segN=12;
   const start = -Math.PI/2; // top
   const step = (Math.PI*2)/segN;
@@ -963,15 +987,26 @@ function initCircleOfFifths(){
     const a1 = start + (i+1)*step;
 
     const key = C5_KEYS[i];
-    const p = document.createElementNS("http://www.w3.org/2000/svg","path");
-    p.setAttribute("d", arcPath(cx,cy,r0,r1,a0,a1));
-    p.setAttribute("class","c5-seg");
-    circleSvg.appendChild(p);
-    c5SegByKey[key] = p;
 
-    // text
+    const pMaj = document.createElementNS("http://www.w3.org/2000/svg","path");
+    pMaj.setAttribute("d", arcPath(cx,cy,outerIn,outerOut,a0,a1));
+    pMaj.setAttribute("class","c5-seg c5-maj");
+    pMaj.style.cursor = "pointer";
+    pMaj.addEventListener("click", ()=> triggerPadFromCircle(key, "maj"));
+    circleSvg.appendChild(pMaj);
+    c5SegByKey.maj[key] = pMaj;
+
+    const pMin = document.createElementNS("http://www.w3.org/2000/svg","path");
+    pMin.setAttribute("d", arcPath(cx,cy,innerIn,innerOut,a0,a1));
+    pMin.setAttribute("class","c5-seg c5-min");
+    pMin.style.cursor = "pointer";
+    pMin.addEventListener("click", ()=> triggerPadFromCircle(key, "min"));
+    circleSvg.appendChild(pMin);
+    c5SegByKey.min[key] = pMin;
+
+    // outer text (major)
     const mid = (a0+a1)/2;
-    const [tx,ty] = polar(cx,cy,(r0+r1)/2, mid);
+    const [tx,ty] = polar(cx,cy,(outerIn+outerOut)/2, mid);
     const t = document.createElementNS("http://www.w3.org/2000/svg","text");
     t.setAttribute("x", tx.toFixed(2));
     t.setAttribute("y", ty.toFixed(2));
@@ -984,7 +1019,7 @@ function initCircleOfFifths(){
 
   // center chord symbol + label
   const center = document.createElementNS("http://www.w3.org/2000/svg","text");
-  center.setAttribute("x","110"); center.setAttribute("y","115");
+  center.setAttribute("x","110"); center.setAttribute("y","113");
   center.setAttribute("text-anchor","middle");
   center.setAttribute("class","c5-center");
   center.setAttribute("id","c5Center");
@@ -992,7 +1027,7 @@ function initCircleOfFifths(){
   circleSvg.appendChild(center);
 
   const sub = document.createElementNS("http://www.w3.org/2000/svg","text");
-  sub.setAttribute("x","110"); sub.setAttribute("y","140");
+  sub.setAttribute("x","110"); sub.setAttribute("y","136");
   sub.setAttribute("text-anchor","middle");
   sub.setAttribute("class","c5-sub");
   sub.setAttribute("id","c5Sub");
@@ -1000,10 +1035,18 @@ function initCircleOfFifths(){
   circleSvg.appendChild(sub);
 }
 
+function highlightChordOnCircle(chordObj){
+  const rootPretty = prettyAccidentals(chordObj?.rootName || keySel?.value || "C");
+  const qual = chordObj?.qual === "min" ? "min" : "maj";
+  ["maj","min"].forEach(mode => {
+    Object.values(c5SegByKey[mode] || {}).forEach(el => el.classList.remove("active"));
+  });
+  const seg = c5SegByKey[qual] ? c5SegByKey[qual][rootPretty] : null;
+  if (seg) seg.classList.add("active");
+}
+
 function highlightKeyOnCircle(keyName){
-  const kPretty = prettyAccidentals(keyName);
-  Object.values(c5SegByKey).forEach(el => el.classList.remove("active"));
-  if (c5SegByKey[kPretty]) c5SegByKey[kPretty].classList.add("active");
+  highlightChordOnCircle({ rootName:keyName, qual:"maj" });
 }
 
 function setChordDisplay(chordObj){
@@ -1018,11 +1061,12 @@ function setChordDisplay(chordObj){
 function renderPads(){
   padsEl.innerHTML = "";
   padButtons = [];
+  padIndexByChord.clear();
 
   const tonic = keySel.value;
   // Build 16 chord pads (8 major + 8 minor) + 8 drum pads
   const drumNames = ["Kick","Snare","Hat","Open Hat","Clap","Tom","Rim","Crash"];
-  const drumSubs  = ["kick","snare","hat","openhat","clap","tom","rim","crash"];
+  const drumSubs  = DRUM_PAD_MAP;
 
   const makePad = (i, kbd, name, sub, bg, notesText) => {
     const btn = document.createElement("div");
@@ -1047,12 +1091,14 @@ function renderPads(){
   // Row 1: Majors (0..7)
   for (let i=0;i<8;i++){
     const c = chordForPad(i, tonic);
+    padIndexByChord.set(chordLookupKey(c.rootName, c.qual), i);
     makePad(i, KBD_KEYS[i], c.label, null, PAD_COLORS[i], c.notes);
   }
   // Row 2: Minors (8..15)
   for (let i=0;i<8;i++){
     const idx = 8+i;
     const c = chordForPad(idx, tonic);
+    padIndexByChord.set(chordLookupKey(c.rootName, c.qual), idx);
     const bg = "linear-gradient(135deg, rgba(16,185,129,.42), rgba(16,185,129,.12))";
     makePad(idx, KBD_KEYS[8+i], c.label, null, bg, c.notes);
   }
@@ -1356,7 +1402,7 @@ function scheduleLoopPlayback(){
   if (!ac) return;
 
   updateLoopBadge();
-  loopInfo.textContent = `Loop: ${bars()} bars • Quantize: ON`;
+  if (loopInfo) loopInfo.textContent = `Loop: ${bars()} bars • Quantize: ON`;
 renderTicks();
 
   playTimer = setInterval(() => {
@@ -1448,7 +1494,7 @@ function padHoldStart(padIndex, pointerId){
   // CHORD PADS: 0..15
   const chordObj = chordForPad(padIndex, keySel.value);
   lastChord.textContent = `Last: ${chordObj.label}`;
-  highlightKeyOnCircle(chordObj.rootName || keySel.value);
+  highlightChordOnCircle(chordObj);
   setChordDisplay(chordObj);
 
   // If the armed track is drums, auto-arm the first non-drum track (or create one)
@@ -1655,25 +1701,29 @@ if (safeModeEl){
 }
 
 // controls
-playBtn.addEventListener("click", () => {
+safeOn(playBtn, "click", () => {
   ensureMasterAudible(); if (!isPlaying) start(); });
-stopBtn.addEventListener("click", stop);
-recBtn.addEventListener("click", toggleRecord);
+safeOn(stopBtn, "click", stop);
+safeOn(recBtn, "click", toggleRecord);
 
-keySel.addEventListener("change", () => renderPads());
-bpmEl.addEventListener("change", () => { bpmEl.value = String(bpm()); if (isPlaying) scheduleLoopPlayback(); });
-barsSel.addEventListener("change", () => {
+safeOn(keySel, "change", () => {
+  renderPads();
+  highlightKeyOnCircle(keySel.value);
+  setChordDisplay(chordForPad(0, keySel.value));
+});
+safeOn(bpmEl, "change", () => { bpmEl.value = String(bpm()); if (isPlaying) scheduleLoopPlayback(); });
+safeOn(barsSel, "change", () => {
   const lb = loopBeats();
   tracks.forEach(t => { t.events = t.events.map(e => ({...e, tBeats: e.tBeats % lb, dBeats: Math.min(e.dBeats ?? 1.0, lb) })); t.lastScheduledAbs = {}; });
   if (isPlaying) scheduleLoopPlayback();
-  loopInfo.textContent = `Loop: ${bars()} bars • Quantize: ON`;
+  if (loopInfo) loopInfo.textContent = `Loop: ${bars()} bars • Quantize: ON`;
   renderTicks();
 });
-revEl.addEventListener("input", () => { if (wet) wet.gain.value = parseFloat(revEl.value); });
+safeOn(revEl, "input", () => { if (wet) wet.gain.value = parseFloat(revEl.value); });
 
-addTrackBtn.addEventListener("click", () => addTrack());
-clearAllBtn.addEventListener("click", () => clearAll());
-exportBtn.addEventListener("click", () => bounceWav());
+safeOn(addTrackBtn, "click", () => addTrack());
+safeOn(clearAllBtn, "click", () => clearAll());
+safeOn(exportBtn, "click", () => bounceWav());
 if (panicBtn){
   panicBtn.addEventListener("click", ()=>{
     try{ stop(); }catch(_){ }
@@ -1712,12 +1762,14 @@ window.addEventListener("keydown", (e) => {
 
 // init
 renderPads();
-  initCircleOfFifths();
+initCircleOfFifths();
+if (keySel){
   highlightKeyOnCircle(keySel.value);
   setChordDisplay(chordForPad(0, keySel.value));
+}
 addTrack("Track 1");
 updateLoopBadge();
-loopInfo.textContent = `Loop: ${bars()} bars • Quantize: ON`;
+if (loopInfo) loopInfo.textContent = `Loop: ${bars()} bars • Quantize: ON`;
 
 
 document.body.addEventListener('pointerdown', () => { try{ ensureAudio(); if(ac && ac.state==='suspended') ac.resume(); }catch(_){ } }, { once:false });
