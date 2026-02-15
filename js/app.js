@@ -79,7 +79,7 @@ const NOTE_NAMES  = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
 const MAJOR_SCALE = [0,2,4,5,7,9,11];
 const TRIADS = { maj:[0,4,7], min:[0,3,7], dim:[0,3,6] };
 
-function prettyAccidentals(s){ return (s||"").replaceAll("#","♯"); }
+function prettyAccidentals(s){ return (s||"").split("#").join("♯"); }
 function chordSymbol(rootName, qual){
   const r = prettyAccidentals(rootName);
   if (qual === "min") return r + "m";
@@ -1061,7 +1061,29 @@ function setChordDisplay(chordObj){
   if (s) s.textContent = prettyAccidentals(chordObj?.keyName || keySel?.value || "");
 }
 
+function renderPadsFallback(){
+  if (!padsEl) return;
+  padsEl.innerHTML = "";
+  const labels = ["C","D","E","F","G","A","B","C","Cm","Dm","Em","Fm","Gm","Am","Bm","Cm","Kick","Snare","Hat","Open Hat","Clap","Tom","Rim","Crash"];
+  for (let i=0;i<24;i++){
+    const btn = document.createElement("div");
+    btn.className = "pad";
+    btn.innerHTML = `<div class="kbd">${KBD_KEYS[i] || ""}</div><div class="name">${labels[i]}</div><div class="notes">Fallback</div>`;
+    padsEl.appendChild(btn);
+  }
+}
+
+function renderPadsSafe(){
+  try { renderPads(); }
+  catch(err){
+    console.error("renderPads failed", err);
+    setAudioStateText("UI fallback active");
+    renderPadsFallback();
+  }
+}
+
 function renderPads(){
+  if (!padsEl) return;
   padsEl.innerHTML = "";
   padButtons = [];
   padIndexByChord.clear();
@@ -1203,7 +1225,6 @@ function rebuildMicRouting(){
       const outWet = ac.createGain();
 
       const fx = t.micFx || { rev:0.25, delay:0.12, comp:0.30, tune:0.15, autoTune:true, tuneKey:"C" };
-      const fx = t.micFx || { rev:0.25, delay:0.12, comp:0.30, tune:0.15 };
 
       inG.gain.value = Math.max(0, t.vol ?? 1.0);
       compN.threshold.value = -34 + (fx.comp * 22);
@@ -1216,9 +1237,6 @@ function rebuildMicRouting(){
       tuneN.frequency.value = 220 + ((tuneKey < 0 ? 0 : tuneKey) * 40) + (fx.tune * 800);
       tuneN.Q.value = fx.autoTune ? (1.8 + (fx.tune * 4)) : 0.7;
       tuneN.gain.value = fx.autoTune ? (fx.tune * 12) : 0;
-      tuneN.frequency.value = 900 + (fx.tune * 2200);
-      tuneN.Q.value = 1.2 + (fx.tune * 3);
-      tuneN.gain.value = fx.tune * 10;
 
       dly.delayTime.value = 0.03 + (fx.delay * 0.28);
       dlyFb.gain.value = fx.delay * 0.35;
@@ -1309,7 +1327,6 @@ function addTrack(name){
   const id = uid();
   const color = TRACK_COLORS[tracks.length % TRACK_COLORS.length];
   const t = { id, name: name ?? `Track ${tracks.length + 1}`, color, role:"chord", instrument:"classic_piano", strum:false, rev:0.22, micFx:{ rev:0.25, delay:0.12, comp:0.30, tune:0.15, autoTune:true, tuneKey:"C" }, events: [], muted:false, armed:false, vol:1.00, lastScheduledAbs:{} };
-  const t = { id, name: name ?? `Track ${tracks.length + 1}`, color, role:"chord", instrument:"classic_piano", strum:false, rev:0.22, micFx:{ rev:0.25, delay:0.12, comp:0.30, tune:0.15 }, events: [], muted:false, armed:false, vol:1.00, lastScheduledAbs:{} };
   tracks.push(t);
   if (!armedTrackId) setArmedTrack(id);
   renderTracks();
@@ -1417,7 +1434,6 @@ function renderTracks(){
 
     if (t.role === "mic"){
       const fx = t.micFx || (t.micFx = { rev:0.25, delay:0.12, comp:0.30, tune:0.15, autoTune:true, tuneKey:"C" });
-      const fx = t.micFx || (t.micFx = { rev:0.25, delay:0.12, comp:0.30, tune:0.15 });
 
       const micRev = document.createElement("input");
       micRev.type = "range"; micRev.min = "0"; micRev.max = "1"; micRev.step = "0.01"; micRev.value = String(fx.rev);
@@ -1454,10 +1470,6 @@ function renderTracks(){
       micTune.type = "range"; micTune.min = "0"; micTune.max = "1"; micTune.step = "0.01"; micTune.value = String(fx.tune);
       micTune.addEventListener("input", () => { fx.tune = parseFloat(micTune.value); rebuildMicRouting(); });
       controls.appendChild(wrapCtl("Tune Amt", micTune));
-      const micTune = document.createElement("input");
-      micTune.type = "range"; micTune.min = "0"; micTune.max = "1"; micTune.step = "0.01"; micTune.value = String(fx.tune);
-      micTune.addEventListener("input", () => { fx.tune = parseFloat(micTune.value); rebuildMicRouting(); });
-      controls.appendChild(wrapCtl("Tune", micTune));
     } else {
       const strWrap = document.createElement("div");
       strWrap.style.display = "flex";
@@ -1487,7 +1499,6 @@ function renderTracks(){
     const [armBtn, muteBtn, clearBtn] = btns.querySelectorAll("button");
     armBtn.addEventListener("click", () => setArmedTrack(t.id));
     muteBtn.addEventListener("click", () => { toggleMute(t.id); });
-    muteBtn.addEventListener("click", () => { toggleMute(t.id); rebuildMicRouting(); });
     clearBtn.addEventListener("click", () => clearTrack(t.id));
 
     row.appendChild(left);
@@ -1857,11 +1868,10 @@ safeOn(stopBtn, "click", stop);
 safeOn(recBtn, "click", toggleRecord);
 
 safeOn(keySel, "change", () => {
-  renderPads();
+  renderPadsSafe();
   highlightKeyOnCircle(keySel.value);
   setChordDisplay(chordForPad(0, keySel.value));
 });
-safeOn(keySel, "change", () => renderPads());
 safeOn(bpmEl, "change", () => { bpmEl.value = String(bpm()); if (isPlaying) scheduleLoopPlayback(); });
 safeOn(barsSel, "change", () => {
   const lb = loopBeats();
@@ -1912,7 +1922,7 @@ window.addEventListener("keydown", (e) => {
 });
 
 // init
-renderPads();
+renderPadsSafe();
 initCircleOfFifths();
 if (keySel){
   highlightKeyOnCircle(keySel.value);
