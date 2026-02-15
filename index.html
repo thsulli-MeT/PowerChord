@@ -64,7 +64,7 @@
     <button class="btn danger" id="stopBtn">■</button>
     <button class="btn" id="recBtn">●</button>
     <button class="btn" id="exportBtn">⬇ WAV</button>
-    <button class="btn danger" id="panicBtn">⛔</button>
+    <button class="btn danger panicBig" id="panicBtn">⛔ PANIC</button>
 
     <div class="patternBox" title="Fill a drum track with a starter groove">
       <div class="miniLabel">Drums</div>
@@ -95,18 +95,20 @@
       <div class="vizLeft">
         <div class="vizTitle">Output</div>
         <canvas id="meter" width="420" height="18"></canvas>
+        <div class="miniAd">Ad slot</div>
       </div>
+
+      <div class="vizLearn">
+        <div class="vizTitle">Circle of Fifths</div>
+        <div class="learnChord" id="learnChord">—</div>
+        <svg id="circleSvg" viewBox="0 0 220 220" role="img" aria-label="Circle of Fifths diagram"></svg>
+      </div>
+
       <div class="vizRight">
         <div class="vizTitle">Spectrum</div>
         <canvas id="spectrum" width="420" height="70"></canvas>
+        <div class="miniAd">Ad slot</div>
       </div>
-    
-<div class="vizLearn">
-  <div class="vizTitle">Circle of Fifths</div>
-  <div class="learnChord" id="learnChord">—</div>
-  <svg id="circleSvg" viewBox="0 0 220 220" role="img" aria-label="Circle of Fifths diagram"></svg>
-</div>
-
     </section>
 <section class="padsWrap">
       <div class="pads" id="pads"></div>

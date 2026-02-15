@@ -202,6 +202,7 @@ let padButtons = [];
 let activeHolds = new Map(); // pointerId -> { stopFn, recEventId?, trackId?, startBeat? }
 let nextEventId = 1;
 let padIndexByChord = new Map();
+const drumPadRates = Array(8).fill(1.0);
 
 // helpers
 function clamp(v,a,b){ return Math.min(b, Math.max(a,v)); }
@@ -1109,6 +1110,20 @@ function renderPads(){
     const idx = 16+i;
     const bg = "linear-gradient(135deg, rgba(249,115,22,.44), rgba(236,72,153,.12))";
     makePad(idx, KBD_KEYS[16+i], drumNames[i], drumSubs[i], bg, "Percussion");
+    const btn = padButtons[padButtons.length-1];
+    if (btn){
+      const wrap = document.createElement("div");
+      wrap.className = "drumRateWrap";
+      wrap.innerHTML = '<span>Speed</span>';
+      const rt = document.createElement("input");
+      rt.type = "range"; rt.min="0.5"; rt.max="4"; rt.step="0.1"; rt.value=String(drumPadRates[i]||1);
+      rt.className = "drumRate";
+      rt.addEventListener("pointerdown", ev => ev.stopPropagation());
+      rt.addEventListener("click", ev => ev.stopPropagation());
+      rt.addEventListener("input", () => { drumPadRates[i] = parseFloat(rt.value); });
+      wrap.appendChild(rt);
+      btn.appendChild(wrap);
+    }
   }
 
   // sanity check: always 24
@@ -1121,7 +1136,7 @@ function setPadActive(i, on){
   const el = padButtons[i];
   if (!el) return;
   el.classList.toggle("active", !!on);
-  if (on) setTimeout(() => el.classList.remove("active"), 120);
+  if (on) setTimeout(() => el.classList.remove("active"), 170);
 }
 
 // tracks
@@ -1187,6 +1202,7 @@ function rebuildMicRouting(){
       const outDry = ac.createGain();
       const outWet = ac.createGain();
 
+      const fx = t.micFx || { rev:0.25, delay:0.12, comp:0.30, tune:0.15, autoTune:true, tuneKey:"C" };
       const fx = t.micFx || { rev:0.25, delay:0.12, comp:0.30, tune:0.15 };
 
       inG.gain.value = Math.max(0, t.vol ?? 1.0);
@@ -1196,6 +1212,10 @@ function rebuildMicRouting(){
       compN.release.value = 0.16;
 
       tuneN.type = "peaking";
+      const tuneKey = NOTE_NAMES.indexOf((fx.tuneKey || keySel?.value || "C").replace("♯", "#"));
+      tuneN.frequency.value = 220 + ((tuneKey < 0 ? 0 : tuneKey) * 40) + (fx.tune * 800);
+      tuneN.Q.value = fx.autoTune ? (1.8 + (fx.tune * 4)) : 0.7;
+      tuneN.gain.value = fx.autoTune ? (fx.tune * 12) : 0;
       tuneN.frequency.value = 900 + (fx.tune * 2200);
       tuneN.Q.value = 1.2 + (fx.tune * 3);
       tuneN.gain.value = fx.tune * 10;
@@ -1288,6 +1308,7 @@ function applyDrumPattern(kind){
 function addTrack(name){
   const id = uid();
   const color = TRACK_COLORS[tracks.length % TRACK_COLORS.length];
+  const t = { id, name: name ?? `Track ${tracks.length + 1}`, color, role:"chord", instrument:"classic_piano", strum:false, rev:0.22, micFx:{ rev:0.25, delay:0.12, comp:0.30, tune:0.15, autoTune:true, tuneKey:"C" }, events: [], muted:false, armed:false, vol:1.00, lastScheduledAbs:{} };
   const t = { id, name: name ?? `Track ${tracks.length + 1}`, color, role:"chord", instrument:"classic_piano", strum:false, rev:0.22, micFx:{ rev:0.25, delay:0.12, comp:0.30, tune:0.15 }, events: [], muted:false, armed:false, vol:1.00, lastScheduledAbs:{} };
   tracks.push(t);
   if (!armedTrackId) setArmedTrack(id);
@@ -1320,7 +1341,9 @@ function toggleMute(id){
   const t = tracks.find(x => x.id === id);
   if (!t) return;
   t.muted = !t.muted;
+  if (t.muted && t.role === "mic") clearMicNodes(t);
   renderTracks();
+  rebuildMicRouting();
 }
 
 function clearAll(){
@@ -1393,6 +1416,7 @@ function renderTracks(){
     controls.appendChild(wrapCtl("Rev", rv));
 
     if (t.role === "mic"){
+      const fx = t.micFx || (t.micFx = { rev:0.25, delay:0.12, comp:0.30, tune:0.15, autoTune:true, tuneKey:"C" });
       const fx = t.micFx || (t.micFx = { rev:0.25, delay:0.12, comp:0.30, tune:0.15 });
 
       const micRev = document.createElement("input");
@@ -1410,6 +1434,26 @@ function renderTracks(){
       micComp.addEventListener("input", () => { fx.comp = parseFloat(micComp.value); rebuildMicRouting(); });
       controls.appendChild(wrapCtl("Comp", micComp));
 
+      const tuneOn = document.createElement("input");
+      tuneOn.type = "checkbox";
+      tuneOn.checked = fx.autoTune !== false;
+      tuneOn.addEventListener("change", () => { fx.autoTune = !!tuneOn.checked; rebuildMicRouting(); });
+      controls.appendChild(wrapCtl("AutoTune", tuneOn));
+
+      const tuneKeySel = document.createElement("select");
+      NOTE_NAMES.forEach(n => {
+        const o = document.createElement("option");
+        o.value = n; o.textContent = n;
+        if ((fx.tuneKey || "C") === n) o.selected = true;
+        tuneKeySel.appendChild(o);
+      });
+      tuneKeySel.addEventListener("change", () => { fx.tuneKey = tuneKeySel.value; rebuildMicRouting(); });
+      controls.appendChild(wrapCtl("Tune Key", tuneKeySel));
+
+      const micTune = document.createElement("input");
+      micTune.type = "range"; micTune.min = "0"; micTune.max = "1"; micTune.step = "0.01"; micTune.value = String(fx.tune);
+      micTune.addEventListener("input", () => { fx.tune = parseFloat(micTune.value); rebuildMicRouting(); });
+      controls.appendChild(wrapCtl("Tune Amt", micTune));
       const micTune = document.createElement("input");
       micTune.type = "range"; micTune.min = "0"; micTune.max = "1"; micTune.step = "0.01"; micTune.value = String(fx.tune);
       micTune.addEventListener("input", () => { fx.tune = parseFloat(micTune.value); rebuildMicRouting(); });
@@ -1442,6 +1486,7 @@ function renderTracks(){
     `;
     const [armBtn, muteBtn, clearBtn] = btns.querySelectorAll("button");
     armBtn.addEventListener("click", () => setArmedTrack(t.id));
+    muteBtn.addEventListener("click", () => { toggleMute(t.id); });
     muteBtn.addEventListener("click", () => { toggleMute(t.id); rebuildMicRouting(); });
     clearBtn.addEventListener("click", () => clearTrack(t.id));
 
@@ -1571,17 +1616,23 @@ function padHoldStart(padIndex, pointerId){
     const sub = padIndex - 16; // 0..7
     const drumTrack = (armed && armed.role === "drums") ? armed : ensureDrumTrack();
     const type = DRUM_PAD_MAP[sub] || "hat";
-    drumHit(ac, dry, wet, type, ac.currentTime, drumTrack.vol, drumTrack.rev);
-    activeHolds.set(pointerId, { stopFn: ()=>{}, padIndex });
-
-    if (isRecording && isPlaying){
-      const b = nowBeats();
-      const q = quantizeBeat(b, 0.25) % loopBeats();
-      const id = nextEventId++;
-      drumTrack.events.push({ id, tBeats: q, padIndex: sub, dBeats: 0.25 });
-      updateLoopBadge();
-      renderTracks();
-    }
+    const speed = Math.max(0.25, drumPadRates[sub] || 1.0);
+    const hitDur = Math.max(0.06, 0.25 / speed);
+    const hitNow = () => {
+      drumHit(ac, dry, wet, type, ac.currentTime, drumTrack.vol, drumTrack.rev);
+      if (isRecording && isPlaying){
+        const b = nowBeats();
+        const q = quantizeBeat(b, 0.25) % loopBeats();
+        const id = nextEventId++;
+        drumTrack.events.push({ id, tBeats: q, padIndex: sub, dBeats: hitDur });
+        updateLoopBadge();
+        renderTracks();
+      }
+    };
+    hitNow();
+    const repMs = Math.max(55, Math.floor((250 / speed)));
+    const repTimer = setInterval(hitNow, repMs);
+    activeHolds.set(pointerId, { stopFn: ()=>clearInterval(repTimer), padIndex });
     return;
   }
 
@@ -1691,6 +1742,11 @@ function stop(){
 
 function toggleRecord(){
   if (!isPlaying) start();
+  const armed = getArmedTrack();
+  if (armed && (armed.role === "drums" || armed.role === "mic")){
+    const melodic = tracks.find(t => t.role !== "drums" && t.role !== "mic");
+    if (melodic) setArmedTrack(melodic.id);
+  }
   isRecording = !isRecording;
   recBtn.classList.toggle("on", isRecording);
   modePill.textContent = isRecording ? "Mode: Record" : "Mode: Play";
