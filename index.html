@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>sMV PowerChord (v4.0)</title>
+  <title>sMV PowerChord (v4.4)</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -25,11 +25,11 @@
     
 <header class="topHeader noLearn">
   <div class="headerLeft">
-    <div class="title">sMV PowerChord v4.0</div>
+    <div class="title">sMV PowerChord v4.4</div>
     <div class="hint">Pads: Row1 A S D F G H J K • Row2 Q W E R T Y U I • Row3 Z X C V B N M ,</div>
   </div>
 </header>
-<div class="sanityBanner">✅ UI SANITY CHECK: This build MUST show <b>24 pads</b> (16 chords + 8 drums). If you don't see them, you're not loading this folder.</div>
+<div class="sanityBanner">Version: <b>v4.4</b></div>
 
 
 
@@ -64,7 +64,7 @@
     <button class="btn danger" id="stopBtn">■</button>
     <button class="btn" id="recBtn">●</button>
     <button class="btn" id="exportBtn">⬇ WAV</button>
-    <button class="btn danger" id="panicBtn">⛔</button>
+    <button class="btn danger panicBig" id="panicBtn">⛔ PANIC</button>
 
     <div class="patternBox" title="Fill a drum track with a starter groove">
       <div class="miniLabel">Drums</div>
@@ -95,18 +95,20 @@
       <div class="vizLeft">
         <div class="vizTitle">Output</div>
         <canvas id="meter" width="420" height="18"></canvas>
+        <div class="miniAd">Ad slot</div>
       </div>
+
+      <div class="vizLearn">
+        <div class="vizTitle">Circle of Fifths</div>
+        <div class="learnChord" id="learnChord">—</div>
+        <svg id="circleSvg" viewBox="0 0 220 220" role="img" aria-label="Circle of Fifths diagram"></svg>
+      </div>
+
       <div class="vizRight">
         <div class="vizTitle">Spectrum</div>
         <canvas id="spectrum" width="420" height="70"></canvas>
+        <div class="miniAd">Ad slot</div>
       </div>
-    
-<div class="vizLearn">
-  <div class="vizTitle">Circle of Fifths</div>
-  <div class="learnChord" id="learnChord">—</div>
-  <svg id="circleSvg" viewBox="0 0 220 220" role="img" aria-label="Circle of Fifths diagram"></svg>
-</div>
-
     </section>
 <section class="padsWrap">
       <div class="pads" id="pads"></div>
