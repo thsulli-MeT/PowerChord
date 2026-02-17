@@ -194,6 +194,7 @@ let isRecording = false;
 let loopStartTime = 0;
 let playTimer = null;
 let rafId = null;
+let playheadTimer = null;
 
 // Tracks
 let tracks = []; // {id,name,color,role,events:[], muted:false, armed:false, vol:0..1}
@@ -1547,6 +1548,26 @@ function nowBeats(){
 
 // playback (no duplicates)
 
+function updatePlayheadUI(){
+  if (!isPlaying || !ac) return;
+  const lb = loopBeats();
+  const beatNow = nowBeats();
+  const frac = (beatNow % lb) / lb;
+  const { blocksEl, playheadEl } = getPlayheadElements();
+  if (blocksEl && playheadEl){
+    const w = blocksEl.clientWidth || 0;
+    playheadEl.style.transform = `translateX(${Math.floor(frac * w)}px)`;
+  }
+}
+
+function ensurePlayheadLoop(){
+  clearInterval(playheadTimer);
+  playheadTimer = setInterval(() => {
+    if (!isPlaying) return;
+    updatePlayheadUI();
+  }, 33);
+}
+
 function getPlayheadElements(){
   const b = blocks || document.getElementById("blocks");
   let p = playhead || document.getElementById("playhead");
@@ -1618,14 +1639,7 @@ renderTicks();
   cancelAnimationFrame(rafId);
   const tick = () => {
     if (!isPlaying || !ac) return;
-    const lb = loopBeats();
-    const beatNow = nowBeats();
-    const frac = (beatNow % lb) / lb;
-    const { blocksEl, playheadEl } = getPlayheadElements();
-    if (blocksEl && playheadEl){
-      const w = blocksEl.clientWidth || 0;
-      playheadEl.style.transform = `translateX(${Math.floor(frac * w)}px)`;
-    }
+    updatePlayheadUI();
     rafId = requestAnimationFrame(tick);
   };
   rafId = requestAnimationFrame(tick);
@@ -1751,6 +1765,7 @@ function start(){
   playBtn.classList.add("on");
   modePill.textContent = isRecording ? "Mode: Record" : "Mode: Play";
   scheduleLoopPlayback();
+  ensurePlayheadLoop();
 }
 
 function stop(){
@@ -1763,6 +1778,8 @@ function stop(){
 
   clearInterval(playTimer);
   playTimer = null;
+  clearInterval(playheadTimer);
+  playheadTimer = null;
   cancelAnimationFrame(rafId);
 
   const { playheadEl } = getPlayheadElements();
@@ -1773,6 +1790,7 @@ function stop(){
 function toggleRecord(){
   if (!isPlaying) start();
   if (!playTimer && ac) scheduleLoopPlayback();
+  ensurePlayheadLoop();
 
   let armed = getArmedTrack();
   if (!armed && tracks.length === 0){
@@ -1787,6 +1805,10 @@ function toggleRecord(){
   }
 
   isRecording = !isRecording;
+  if (isRecording && ac && !isPlaying){
+    isPlaying = true;
+    loopStartTime = ac.currentTime;
+  }
   recBtn.classList.toggle("on", isRecording);
   modePill.textContent = isRecording ? "Mode: Record" : "Mode: Play";
   setAudioStateText(isRecording ? "Audio: on • Recording" : "Audio: on");
