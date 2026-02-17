@@ -1546,6 +1546,19 @@ function nowBeats(){
 }
 
 // playback (no duplicates)
+
+function getPlayheadElements(){
+  const b = blocks || document.getElementById("blocks");
+  let p = playhead || document.getElementById("playhead");
+  if (b && !p){
+    p = document.createElement("div");
+    p.id = "playhead";
+    p.className = "playhead";
+    b.appendChild(p);
+  }
+  return { blocksEl:b, playheadEl:p };
+}
+
 function scheduleLoopPlayback(){
   clearInterval(playTimer);
   if (!ac) return;
@@ -1608,9 +1621,11 @@ renderTicks();
     const lb = loopBeats();
     const beatNow = nowBeats();
     const frac = (beatNow % lb) / lb;
-    if (!blocks || !playhead) return;
-    const w = blocks.clientWidth || 0;
-    playhead.style.transform = `translateX(${Math.floor(frac * w)}px)`;
+    const { blocksEl, playheadEl } = getPlayheadElements();
+    if (blocksEl && playheadEl){
+      const w = blocksEl.clientWidth || 0;
+      playheadEl.style.transform = `translateX(${Math.floor(frac * w)}px)`;
+    }
     rafId = requestAnimationFrame(tick);
   };
   rafId = requestAnimationFrame(tick);
@@ -1750,18 +1765,27 @@ function stop(){
   playTimer = null;
   cancelAnimationFrame(rafId);
 
-  if (playhead) playhead.style.transform = `translateX(0px)`;
+  const { playheadEl } = getPlayheadElements();
+  if (playheadEl) playheadEl.style.transform = `translateX(0px)`;
   [...activeHolds.keys()].forEach(pid => padHoldEnd(pid));
 }
 
 function toggleRecord(){
   if (!isPlaying) start();
-  const armed = getArmedTrack();
+  if (!playTimer && ac) scheduleLoopPlayback();
+
+  let armed = getArmedTrack();
+  if (!armed && tracks.length === 0){
+    addTrack("Track 1");
+    armed = getArmedTrack();
+  }
+
   // keep drums armed for drum recording; only auto-shift away from mic tracks
   if (armed && armed.role === "mic"){
     const melodic = tracks.find(t => t.role !== "mic");
     if (melodic) setArmedTrack(melodic.id);
   }
+
   isRecording = !isRecording;
   recBtn.classList.toggle("on", isRecording);
   modePill.textContent = isRecording ? "Mode: Record" : "Mode: Play";
