@@ -1608,7 +1608,8 @@ renderTicks();
     const lb = loopBeats();
     const beatNow = nowBeats();
     const frac = (beatNow % lb) / lb;
-    const w = blocks.clientWidth;
+    if (!blocks || !playhead) return;
+    const w = blocks.clientWidth || 0;
     playhead.style.transform = `translateX(${Math.floor(frac * w)}px)`;
     rafId = requestAnimationFrame(tick);
   };
@@ -1749,7 +1750,7 @@ function stop(){
   playTimer = null;
   cancelAnimationFrame(rafId);
 
-  playhead.style.transform = `translateX(0px)`;
+  if (playhead) playhead.style.transform = `translateX(0px)`;
   [...activeHolds.keys()].forEach(pid => padHoldEnd(pid));
 }
 
@@ -1764,6 +1765,7 @@ function toggleRecord(){
   isRecording = !isRecording;
   recBtn.classList.toggle("on", isRecording);
   modePill.textContent = isRecording ? "Mode: Record" : "Mode: Play";
+  setAudioStateText(isRecording ? "Audio: on • Recording" : "Audio: on");
   if (isRecording) updateLoopBadge();
 }
 
