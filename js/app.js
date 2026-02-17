@@ -126,6 +126,7 @@ const panicBtn = document.getElementById("panicBtn");
 const rockBtn = document.getElementById("rockBtn");
 const hiphopBtn = document.getElementById("hiphopBtn");
 const safeModeEl = document.getElementById("safeMode");
+const micMonitorEl = document.getElementById("micMonitor");
 const meterCv = document.getElementById("meter");
 const spectrumCv = document.getElementById("spectrum");
 
@@ -178,6 +179,7 @@ let convolver = null;
 let activeVoiceStops = new Set();
 let micInputSource = null;
 let micInputStream = null;
+let micMonitorOn = true;
 let rafViz = null;
 const meterData = new Uint8Array(1024);
 const analyserData = new Uint8Array(1024);
@@ -1209,7 +1211,7 @@ function clearMicNodes(t){
 
 function rebuildMicRouting(){
   tracks.forEach(t => clearMicNodes(t));
-  if (!ac || !dry || !wet) return;
+  if (!ac || !dry || !wet || !micMonitorOn) return;
 
   tracks.forEach(t => {
     if (t.role !== "mic" || t.muted) return;
@@ -1754,13 +1756,15 @@ function stop(){
 function toggleRecord(){
   if (!isPlaying) start();
   const armed = getArmedTrack();
-  if (armed && (armed.role === "drums" || armed.role === "mic")){
-    const melodic = tracks.find(t => t.role !== "drums" && t.role !== "mic");
+  // keep drums armed for drum recording; only auto-shift away from mic tracks
+  if (armed && armed.role === "mic"){
+    const melodic = tracks.find(t => t.role !== "mic");
     if (melodic) setArmedTrack(melodic.id);
   }
   isRecording = !isRecording;
   recBtn.classList.toggle("on", isRecording);
   modePill.textContent = isRecording ? "Mode: Record" : "Mode: Play";
+  if (isRecording) updateLoopBadge();
 }
 
 // Bounce (one loop cycle)
@@ -1859,6 +1863,13 @@ function audioBufferToWavBlob(buffer){
 safeMode = safeModeEl ? !!safeModeEl.checked : true;
 if (safeModeEl){
   safeModeEl.addEventListener("change", ()=>{ safeMode = !!safeModeEl.checked; });
+}
+micMonitorOn = micMonitorEl ? !!micMonitorEl.checked : true;
+if (micMonitorEl){
+  micMonitorEl.addEventListener("change", ()=>{
+    micMonitorOn = !!micMonitorEl.checked;
+    rebuildMicRouting();
+  });
 }
 
 // controls

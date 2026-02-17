@@ -560,3 +560,5 @@ canvas{
   .vizRow{ grid-template-columns: 1fr; }
   .vizLearn{ width:100%; max-width:260px; }
 }
+
+#micMonitor{ accent-color: #22c55e; }

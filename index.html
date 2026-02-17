@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>sMV PowerChord (v4.4)</title>
+  <title>sMV PowerChord (v4.5)</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -25,11 +25,11 @@
     
 <header class="topHeader noLearn">
   <div class="headerLeft">
-    <div class="title">sMV PowerChord v4.4</div>
+    <div class="title">sMV PowerChord v4.5</div>
     <div class="hint">Pads: Row1 A S D F G H J K • Row2 Q W E R T Y U I • Row3 Z X C V B N M ,</div>
   </div>
 </header>
-<div class="sanityBanner">Version: <b>v4.4</b></div>
+<div class="sanityBanner">Version: <b>v4.5</b></div>
 
 
 
@@ -85,6 +85,7 @@
     <div class="mini"><div class="miniLabel">Room</div><input id="rev" type="range" min="0" max="1" step="0.01" value="0.22"/></div>
 
     <label class="miniCheck" title="Output limiter + auto-duck"><input id="safeMode" type="checkbox" checked/><span>Safe</span></label>
+    <label class="miniCheck" title="Disable if you hear mic feedback"><input id="micMonitor" type="checkbox" checked/><span>Mic Mon</span></label>
     <div class="audioState" id="audioStateMini">Audio: off</div>
   </div>
 </section>
@@ -121,7 +122,7 @@
         <span class="pill" id="armedPill">Armed: Track 1</span>
         <span class="pill" id="lastChord">Last: —</span>
       </div>
-      <div class="pill">Hold pads to sustain • Bounce exports one loop cycle</div>
+      <div class="pill">Hold pads to sustain • Bounce exports one loop cycle • Mic tip: use headphones to avoid feedback</div>
     </div>
   </div>
 
