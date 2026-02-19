@@ -1815,7 +1815,9 @@ function start(){
   modePill.textContent = isRecording ? "Mode: Record" : "Mode: Play";
   scheduleLoopPlayback();
   ensurePlayheadLoop();
+  updatePlayheadUI();
 }
+
 
 function stop(){
   isPlaying = false;
@@ -1841,6 +1843,7 @@ function toggleRecord(){
   if (!isPlaying) start();
   if (!playTimer && ac) scheduleLoopPlayback();
   ensurePlayheadLoop();
+  updatePlayheadUI();
 
   let armed = getArmedTrack();
   if (!armed){
