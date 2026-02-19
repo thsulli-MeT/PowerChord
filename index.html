@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>sMV PowerChord (v4.0)</title>
+  <title>sMV PowerChord (v5.1)</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -25,11 +25,11 @@
     
 <header class="topHeader noLearn">
   <div class="headerLeft">
-    <div class="title">sMV PowerChord v4.0</div>
+    <div class="title">sMV PowerChord v5.1</div>
     <div class="hint">Pads: Row1 A S D F G H J K • Row2 Q W E R T Y U I • Row3 Z X C V B N M ,</div>
   </div>
 </header>
-<div class="sanityBanner">✅ UI SANITY CHECK: This build MUST show <b>24 pads</b> (16 chords + 8 drums). If you don't see them, you're not loading this folder.</div>
+<div class="sanityBanner">Version: <b>v5.1</b></div>
 
 
 
@@ -64,7 +64,7 @@
     <button class="btn danger" id="stopBtn">■</button>
     <button class="btn" id="recBtn">●</button>
     <button class="btn" id="exportBtn">⬇ WAV</button>
-    <button class="btn danger" id="panicBtn">⛔</button>
+    <button class="btn danger panicBig" id="panicBtn">⛔ PANIC</button>
 
     <div class="patternBox" title="Fill a drum track with a starter groove">
       <div class="miniLabel">Drums</div>
@@ -85,6 +85,7 @@
     <div class="mini"><div class="miniLabel">Room</div><input id="rev" type="range" min="0" max="1" step="0.01" value="0.22"/></div>
 
     <label class="miniCheck" title="Output limiter + auto-duck"><input id="safeMode" type="checkbox" checked/><span>Safe</span></label>
+    <label class="miniCheck" title="Disable if you hear mic feedback"><input id="micMonitor" type="checkbox" checked/><span>Mic Mon</span></label>
     <div class="audioState" id="audioStateMini">Audio: off</div>
   </div>
 </section>
@@ -95,18 +96,20 @@
       <div class="vizLeft">
         <div class="vizTitle">Output</div>
         <canvas id="meter" width="420" height="18"></canvas>
+        <div class="miniAd">Ad slot</div>
       </div>
+
+      <div class="vizLearn">
+        <div class="vizTitle">Circle of Fifths</div>
+        <div class="learnChord" id="learnChord">—</div>
+        <svg id="circleSvg" viewBox="0 0 220 220" role="img" aria-label="Circle of Fifths diagram"></svg>
+      </div>
+
       <div class="vizRight">
         <div class="vizTitle">Spectrum</div>
         <canvas id="spectrum" width="420" height="70"></canvas>
+        <div class="miniAd">Ad slot</div>
       </div>
-    
-<div class="vizLearn">
-  <div class="vizTitle">Circle of Fifths</div>
-  <div class="learnChord" id="learnChord">—</div>
-  <svg id="circleSvg" viewBox="0 0 220 220" role="img" aria-label="Circle of Fifths diagram"></svg>
-</div>
-
     </section>
 <section class="padsWrap">
       <div class="pads" id="pads"></div>
@@ -119,7 +122,7 @@
         <span class="pill" id="armedPill">Armed: Track 1</span>
         <span class="pill" id="lastChord">Last: —</span>
       </div>
-      <div class="pill">Hold pads to sustain • Bounce exports one loop cycle</div>
+      <div class="pill">Hold pads to sustain • Bounce exports one loop cycle • Mic tip: use headphones to avoid feedback</div>
     </div>
   </div>
 

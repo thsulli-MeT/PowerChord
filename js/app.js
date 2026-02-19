@@ -79,7 +79,7 @@ const NOTE_NAMES  = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
 const MAJOR_SCALE = [0,2,4,5,7,9,11];
 const TRIADS = { maj:[0,4,7], min:[0,3,7], dim:[0,3,6] };
 
-function prettyAccidentals(s){ return (s||"").replaceAll("#","♯"); }
+function prettyAccidentals(s){ return (s||"").split("#").join("♯"); }
 function chordSymbol(rootName, qual){
   const r = prettyAccidentals(rootName);
   if (qual === "min") return r + "m";
@@ -89,6 +89,7 @@ function chordSymbol(rootName, qual){
 
 
 const KBD_KEYS = ["A","S","D","F","G","H","J","K","Q","W","E","R","T","Y","U","I","Z","X","C","V","B","N","M",","];
+const DRUM_PAD_MAP = ["kick","snare","hat","openhat","clap","tom","rim","crash"];
 const PAD_COLORS = [
   "linear-gradient(135deg, rgba(59,130,246,.45), rgba(59,130,246,.14))",
   "linear-gradient(135deg, rgba(16,185,129,.45), rgba(16,185,129,.14))",
@@ -114,7 +115,7 @@ const barsSel= document.getElementById("barsSel");
 const revEl  = document.getElementById("rev");
 const learnChordEl = document.getElementById("learnChord");
 const meterEl = document.getElementById("meter");
-const analyzerEl = document.getElementById("analyzer");
+const analyzerEl = document.getElementById("analyzer") || document.getElementById("spectrum");
 const circleSvg = document.getElementById("circleSvg");
 
 const playBtn= document.getElementById("playBtn");
@@ -125,6 +126,7 @@ const panicBtn = document.getElementById("panicBtn");
 const rockBtn = document.getElementById("rockBtn");
 const hiphopBtn = document.getElementById("hiphopBtn");
 const safeModeEl = document.getElementById("safeMode");
+const micMonitorEl = document.getElementById("micMonitor");
 const meterCv = document.getElementById("meter");
 const spectrumCv = document.getElementById("spectrum");
 
@@ -175,13 +177,25 @@ let master = null;
 let wet = null, dry = null;
 let convolver = null;
 let activeVoiceStops = new Set();
+let micInputSource = null;
+let micInputStream = null;
+let micMonitorOn = true;
+let rafViz = null;
+const meterData = new Uint8Array(1024);
+const analyserData = new Uint8Array(1024);
+
+function safeOn(el, evt, handler){
+  if (el) el.addEventListener(evt, handler);
+}
 
 // Transport
 let isPlaying = false;
 let isRecording = false;
 let loopStartTime = 0;
+let transportStartMs = 0;
 let playTimer = null;
 let rafId = null;
+let playheadTimer = null;
 
 // Tracks
 let tracks = []; // {id,name,color,role,events:[], muted:false, armed:false, vol:0..1}
@@ -191,6 +205,10 @@ let armedTrackId = null;
 let padButtons = [];
 let activeHolds = new Map(); // pointerId -> { stopFn, recEventId?, trackId?, startBeat? }
 let nextEventId = 1;
+let padIndexByChord = new Map();
+const drumPadRates = Array(8).fill(1.0);
+let simpleLoopEvents = [];
+let nextSimpleEventId = 1;
 
 // helpers
 function clamp(v,a,b){ return Math.min(b, Math.max(a,v)); }
@@ -932,7 +950,7 @@ function freqsForRole(role, chordObj){
 
 const C5_KEYS = ["C","G","D","A","E","B","F#","C#","G#","D#","A#","F"].map(prettyAccidentals);
 const C5_MAP_RAW = {"C":"C","G":"G","D":"D","A":"A","E":"E","B":"B","F#":"F♯","C#":"C♯","G#":"G♯","D#":"D♯","A#":"A♯","F":"F"};
-let c5SegByKey = {};
+let c5SegByKey = { maj:{}, min:{} };
 
 function polar(cx, cy, r, ang){
   return [cx + r*Math.cos(ang), cy + r*Math.sin(ang)];
@@ -947,12 +965,27 @@ function arcPath(cx, cy, r0, r1, a0, a1){
   return `M ${x0} ${y0} A ${r1} ${r1} 0 ${large} 1 ${x1} ${y1} L ${x2} ${y2} A ${r0} ${r0} 0 ${large} 0 ${x3} ${y3} Z`;
 }
 
+function chordLookupKey(rootName, qual){
+  return `${prettyAccidentals(rootName)}|${qual === "min" ? "min" : "maj"}`;
+}
+
+function triggerPadFromCircle(rootNamePretty, qual){
+  const idx = padIndexByChord.get(`${rootNamePretty}|${qual}`);
+  if (idx == null) return;
+  const pid = `c5-${rootNamePretty}-${qual}-${Date.now()}`;
+  setPadActive(idx, true);
+  padHoldStart(idx, pid);
+  setTimeout(() => padHoldEnd(pid), 220);
+}
+
 function initCircleOfFifths(){
   if (!circleSvg) return;
   circleSvg.innerHTML = "";
-  c5SegByKey = {};
+  c5SegByKey = { maj:{}, min:{} };
 
-  const cx=110, cy=110, r0=58, r1=102;
+  const cx=110, cy=110;
+  const outerIn=72, outerOut=102;
+  const innerIn=46, innerOut=70;
   const segN=12;
   const start = -Math.PI/2; // top
   const step = (Math.PI*2)/segN;
@@ -963,15 +996,26 @@ function initCircleOfFifths(){
     const a1 = start + (i+1)*step;
 
     const key = C5_KEYS[i];
-    const p = document.createElementNS("http://www.w3.org/2000/svg","path");
-    p.setAttribute("d", arcPath(cx,cy,r0,r1,a0,a1));
-    p.setAttribute("class","c5-seg");
-    circleSvg.appendChild(p);
-    c5SegByKey[key] = p;
 
-    // text
+    const pMaj = document.createElementNS("http://www.w3.org/2000/svg","path");
+    pMaj.setAttribute("d", arcPath(cx,cy,outerIn,outerOut,a0,a1));
+    pMaj.setAttribute("class","c5-seg c5-maj");
+    pMaj.style.cursor = "pointer";
+    pMaj.addEventListener("click", ()=> triggerPadFromCircle(key, "maj"));
+    circleSvg.appendChild(pMaj);
+    c5SegByKey.maj[key] = pMaj;
+
+    const pMin = document.createElementNS("http://www.w3.org/2000/svg","path");
+    pMin.setAttribute("d", arcPath(cx,cy,innerIn,innerOut,a0,a1));
+    pMin.setAttribute("class","c5-seg c5-min");
+    pMin.style.cursor = "pointer";
+    pMin.addEventListener("click", ()=> triggerPadFromCircle(key, "min"));
+    circleSvg.appendChild(pMin);
+    c5SegByKey.min[key] = pMin;
+
+    // outer text (major)
     const mid = (a0+a1)/2;
-    const [tx,ty] = polar(cx,cy,(r0+r1)/2, mid);
+    const [tx,ty] = polar(cx,cy,(outerIn+outerOut)/2, mid);
     const t = document.createElementNS("http://www.w3.org/2000/svg","text");
     t.setAttribute("x", tx.toFixed(2));
     t.setAttribute("y", ty.toFixed(2));
@@ -984,7 +1028,7 @@ function initCircleOfFifths(){
 
   // center chord symbol + label
   const center = document.createElementNS("http://www.w3.org/2000/svg","text");
-  center.setAttribute("x","110"); center.setAttribute("y","115");
+  center.setAttribute("x","110"); center.setAttribute("y","113");
   center.setAttribute("text-anchor","middle");
   center.setAttribute("class","c5-center");
   center.setAttribute("id","c5Center");
@@ -992,7 +1036,7 @@ function initCircleOfFifths(){
   circleSvg.appendChild(center);
 
   const sub = document.createElementNS("http://www.w3.org/2000/svg","text");
-  sub.setAttribute("x","110"); sub.setAttribute("y","140");
+  sub.setAttribute("x","110"); sub.setAttribute("y","136");
   sub.setAttribute("text-anchor","middle");
   sub.setAttribute("class","c5-sub");
   sub.setAttribute("id","c5Sub");
@@ -1000,10 +1044,18 @@ function initCircleOfFifths(){
   circleSvg.appendChild(sub);
 }
 
+function highlightChordOnCircle(chordObj){
+  const rootPretty = prettyAccidentals(chordObj?.rootName || keySel?.value || "C");
+  const qual = chordObj?.qual === "min" ? "min" : "maj";
+  ["maj","min"].forEach(mode => {
+    Object.values(c5SegByKey[mode] || {}).forEach(el => el.classList.remove("active"));
+  });
+  const seg = c5SegByKey[qual] ? c5SegByKey[qual][rootPretty] : null;
+  if (seg) seg.classList.add("active");
+}
+
 function highlightKeyOnCircle(keyName){
-  const kPretty = prettyAccidentals(keyName);
-  Object.values(c5SegByKey).forEach(el => el.classList.remove("active"));
-  if (c5SegByKey[kPretty]) c5SegByKey[kPretty].classList.add("active");
+  highlightChordOnCircle({ rootName:keyName, qual:"maj" });
 }
 
 function setChordDisplay(chordObj){
@@ -1015,14 +1067,37 @@ function setChordDisplay(chordObj){
   if (s) s.textContent = prettyAccidentals(chordObj?.keyName || keySel?.value || "");
 }
 
+function renderPadsFallback(){
+  if (!padsEl) return;
+  padsEl.innerHTML = "";
+  const labels = ["C","D","E","F","G","A","B","C","Cm","Dm","Em","Fm","Gm","Am","Bm","Cm","Kick","Snare","Hat","Open Hat","Clap","Tom","Rim","Crash"];
+  for (let i=0;i<24;i++){
+    const btn = document.createElement("div");
+    btn.className = "pad";
+    btn.innerHTML = `<div class="kbd">${KBD_KEYS[i] || ""}</div><div class="name">${labels[i]}</div><div class="notes">Fallback</div>`;
+    padsEl.appendChild(btn);
+  }
+}
+
+function renderPadsSafe(){
+  try { renderPads(); }
+  catch(err){
+    console.error("renderPads failed", err);
+    setAudioStateText("UI fallback active");
+    renderPadsFallback();
+  }
+}
+
 function renderPads(){
+  if (!padsEl) return;
   padsEl.innerHTML = "";
   padButtons = [];
+  padIndexByChord.clear();
 
   const tonic = keySel.value;
   // Build 16 chord pads (8 major + 8 minor) + 8 drum pads
   const drumNames = ["Kick","Snare","Hat","Open Hat","Clap","Tom","Rim","Crash"];
-  const drumSubs  = ["kick","snare","hat","openhat","clap","tom","rim","crash"];
+  const drumSubs  = DRUM_PAD_MAP;
 
   const makePad = (i, kbd, name, sub, bg, notesText) => {
     const btn = document.createElement("div");
@@ -1047,12 +1122,14 @@ function renderPads(){
   // Row 1: Majors (0..7)
   for (let i=0;i<8;i++){
     const c = chordForPad(i, tonic);
+    padIndexByChord.set(chordLookupKey(c.rootName, c.qual), i);
     makePad(i, KBD_KEYS[i], c.label, null, PAD_COLORS[i], c.notes);
   }
   // Row 2: Minors (8..15)
   for (let i=0;i<8;i++){
     const idx = 8+i;
     const c = chordForPad(idx, tonic);
+    padIndexByChord.set(chordLookupKey(c.rootName, c.qual), idx);
     const bg = "linear-gradient(135deg, rgba(16,185,129,.42), rgba(16,185,129,.12))";
     makePad(idx, KBD_KEYS[8+i], c.label, null, bg, c.notes);
   }
@@ -1061,6 +1138,20 @@ function renderPads(){
     const idx = 16+i;
     const bg = "linear-gradient(135deg, rgba(249,115,22,.44), rgba(236,72,153,.12))";
     makePad(idx, KBD_KEYS[16+i], drumNames[i], drumSubs[i], bg, "Percussion");
+    const btn = padButtons[padButtons.length-1];
+    if (btn){
+      const wrap = document.createElement("div");
+      wrap.className = "drumRateWrap";
+      wrap.innerHTML = '<span>Speed</span>';
+      const rt = document.createElement("input");
+      rt.type = "range"; rt.min="0.5"; rt.max="4"; rt.step="0.1"; rt.value=String(drumPadRates[i]||1);
+      rt.className = "drumRate";
+      rt.addEventListener("pointerdown", ev => ev.stopPropagation());
+      rt.addEventListener("click", ev => ev.stopPropagation());
+      rt.addEventListener("input", () => { drumPadRates[i] = parseFloat(rt.value); });
+      wrap.appendChild(rt);
+      btn.appendChild(wrap);
+    }
   }
 
   // sanity check: always 24
@@ -1073,7 +1164,7 @@ function setPadActive(i, on){
   const el = padButtons[i];
   if (!el) return;
   el.classList.toggle("active", !!on);
-  if (on) setTimeout(() => el.classList.remove("active"), 120);
+  if (on) setTimeout(() => el.classList.remove("active"), 170);
 }
 
 // tracks
@@ -1088,6 +1179,7 @@ const INSTRUMENTS = [
   { value:"electric_guitar", label:"Electric Guitar", supportsStrum:true  },
   { value:"bass_guitar",     label:"Bass Guitar",     supportsStrum:false },
   { value:"drum_kit", label:"Drum Kit", supportsStrum:false },
+  { value:"microphone", label:"Microphone", supportsStrum:false },
 ];
 
 function instrumentMeta(id){
@@ -1099,7 +1191,85 @@ const ROLES = [
   { value:"bass",  label:"Bass" },
   { value:"lead",  label:"Lead" },
   { value:"drums", label:"Drums" },
+  { value:"mic",   label:"Mic" },
 ];
+
+
+async function ensureMicSource(){
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+    throw new Error("Microphone input not supported in this browser.");
+  }
+  ensureAudio();
+  if (ac.state === "suspended") ac.resume();
+  if (micInputSource) return micInputSource;
+  micInputStream = await navigator.mediaDevices.getUserMedia({ audio:true });
+  micInputSource = ac.createMediaStreamSource(micInputStream);
+  return micInputSource;
+}
+
+function clearMicNodes(t){
+  if (!t || !t.micNodes) return;
+  try{ Object.values(t.micNodes).forEach(n => n && n.disconnect && n.disconnect()); }catch(_){ }
+  t.micNodes = null;
+}
+
+function rebuildMicRouting(){
+  tracks.forEach(t => clearMicNodes(t));
+  if (!ac || !dry || !wet || !micMonitorOn) return;
+
+  tracks.forEach(t => {
+    if (t.role !== "mic" || t.muted) return;
+    ensureMicSource().then(src => {
+      if (!ac || t.role !== "mic" || t.muted) return;
+
+      const inG = ac.createGain();
+      const compN = ac.createDynamicsCompressor();
+      const tuneN = ac.createBiquadFilter();
+      const dly = ac.createDelay(1.0);
+      const dlyFb = ac.createGain();
+      const outDry = ac.createGain();
+      const outWet = ac.createGain();
+
+      const fx = t.micFx || { rev:0.25, delay:0.12, comp:0.30, tune:0.15, autoTune:true, tuneKey:"C" };
+
+      inG.gain.value = Math.max(0, t.vol ?? 1.0);
+      compN.threshold.value = -34 + (fx.comp * 22);
+      compN.ratio.value = 2 + (fx.comp * 8);
+      compN.attack.value = 0.01;
+      compN.release.value = 0.16;
+
+      tuneN.type = "peaking";
+      const tuneKey = NOTE_NAMES.indexOf((fx.tuneKey || keySel?.value || "C").replace("♯", "#"));
+      tuneN.frequency.value = 220 + ((tuneKey < 0 ? 0 : tuneKey) * 40) + (fx.tune * 800);
+      tuneN.Q.value = fx.autoTune ? (1.8 + (fx.tune * 4)) : 0.7;
+      tuneN.gain.value = fx.autoTune ? (fx.tune * 12) : 0;
+
+      dly.delayTime.value = 0.03 + (fx.delay * 0.28);
+      dlyFb.gain.value = fx.delay * 0.35;
+
+      outDry.gain.value = 1.0;
+      outWet.gain.value = fx.rev;
+
+      src.connect(inG);
+      inG.connect(compN);
+      compN.connect(tuneN);
+      tuneN.connect(outDry);
+      tuneN.connect(dly);
+      dly.connect(dlyFb);
+      dlyFb.connect(dly);
+      dly.connect(outDry);
+      tuneN.connect(outWet);
+      outDry.connect(dry);
+      outWet.connect(wet);
+
+      t.micNodes = { inG, compN, tuneN, dly, dlyFb, outDry, outWet };
+    }).catch(err => {
+      setAudioStateText("Mic unavailable");
+      console.warn(err);
+    });
+  });
+}
+
 
 
 function ensureDrumTrack(){
@@ -1162,7 +1332,7 @@ function applyDrumPattern(kind){
 function addTrack(name){
   const id = uid();
   const color = TRACK_COLORS[tracks.length % TRACK_COLORS.length];
-  const t = { id, name: name ?? `Track ${tracks.length + 1}`, color, role:"chord", instrument:"classic_piano", strum:false, rev:0.22, events: [], muted:false, armed:false, vol:1.00, lastScheduledAbs:{} };
+  const t = { id, name: name ?? `Track ${tracks.length + 1}`, color, role:"chord", instrument:"classic_piano", strum:false, rev:0.22, micFx:{ rev:0.25, delay:0.12, comp:0.30, tune:0.15, autoTune:true, tuneKey:"C" }, events: [], muted:false, armed:false, vol:1.00, lastScheduledAbs:{} };
   tracks.push(t);
   if (!armedTrackId) setArmedTrack(id);
   renderTracks();
@@ -1177,7 +1347,7 @@ function setArmedTrack(id){
   armedTrackId = id;
   tracks.forEach(t => t.armed = (t.id === id));
   const idx = tracks.findIndex(t => t.id === id);
-  armedPill.textContent = `Armed: Track ${idx >= 0 ? (idx+1) : 1}`;
+  if (armedPill) armedPill.textContent = `Armed: Track ${idx >= 0 ? (idx+1) : 1}`;
   renderTracks();
 }
 
@@ -1194,18 +1364,22 @@ function toggleMute(id){
   const t = tracks.find(x => x.id === id);
   if (!t) return;
   t.muted = !t.muted;
+  if (t.muted && t.role === "mic") clearMicNodes(t);
   renderTracks();
+  rebuildMicRouting();
 }
 
 function clearAll(){
   tracks.forEach(t => { t.events = []; t.lastScheduledAbs = {}; });
+  simpleLoopEvents = [];
   updateLoopBadge();
   renderTracks();
 }
 
 function renderTracks(){
+  if (!tracksEl) return;
   tracksEl.innerHTML = "";
-  tracks.forEach((t, i) => {
+  tracks.forEach((t) => {
     const row = document.createElement("div");
     row.className = "trackRow";
 
@@ -1219,12 +1393,9 @@ function renderTracks(){
       </div>
     `;
 
-    const mid1 = document.createElement("div");
-    mid1.className = "trackCtl";
-    mid1.style.display = "grid";
-    mid1.style.gap = "8px";
+    const controls = document.createElement("div");
+    controls.className = "trackCtl trackCtlInline";
 
-    // Role
     const roleSel = document.createElement("select");
     ROLES.forEach(r => {
       const opt = document.createElement("option");
@@ -1233,11 +1404,15 @@ function renderTracks(){
       if (t.role === r.value) opt.selected = true;
       roleSel.appendChild(opt);
     });
-    roleSel.addEventListener("change", () => { t.role = roleSel.value;
-      if (t.role === "drums") { t.instrument = "drum_kit"; t.strum = false; } });
-    mid1.appendChild(wrapCtl("Role", roleSel));
+    roleSel.addEventListener("change", () => {
+      t.role = roleSel.value;
+      if (t.role === "drums") { t.instrument = "drum_kit"; t.strum = false; }
+      if (t.role === "mic") { t.instrument = "microphone"; t.strum = false; }
+      renderTracks();
+      rebuildMicRouting();
+    });
+    controls.appendChild(wrapCtl("Role", roleSel));
 
-    // Instrument
     const instSel = document.createElement("select");
     INSTRUMENTS.forEach(r => {
       const opt = document.createElement("option");
@@ -1246,57 +1421,81 @@ function renderTracks(){
       if (t.instrument === r.value) opt.selected = true;
       instSel.appendChild(opt);
     });
+    instSel.disabled = (t.role === "mic");
     instSel.addEventListener("change", () => {
       t.instrument = instSel.value;
-      // if instrument doesn't support strum, turn it off
       const meta = instrumentMeta(t.instrument);
       if (!meta.supportsStrum) t.strum = false;
       renderTracks();
     });
-    mid1.appendChild(wrapCtl("Instrument", instSel));
+    controls.appendChild(wrapCtl("Instrument", instSel));
 
-    const mid2 = document.createElement("div");
-    mid2.className = "trackCtl";
-    mid2.style.display = "grid";
-    mid2.style.gap = "8px";
-
-    // Volume
     const vol = document.createElement("input");
     vol.type = "range"; vol.min = "0"; vol.max = "1"; vol.step = "0.01"; vol.value = String(t.vol);
-    vol.addEventListener("input", () => { t.vol = parseFloat(vol.value); });
-    mid2.appendChild(wrapCtl("Vol", vol));
+    vol.addEventListener("input", () => { t.vol = parseFloat(vol.value); rebuildMicRouting(); });
+    controls.appendChild(wrapCtl("Vol", vol));
 
-    // Reverb send
     const rv = document.createElement("input");
     rv.type = "range"; rv.min = "0"; rv.max = "1"; rv.step = "0.01"; rv.value = String(t.rev ?? 0.22);
     rv.addEventListener("input", () => { t.rev = parseFloat(rv.value); });
-    mid2.appendChild(wrapCtl("Rev", rv));
+    controls.appendChild(wrapCtl("Rev", rv));
 
-    // Strum
-    const strWrap = document.createElement("div");
-    strWrap.style.display = "flex";
-    strWrap.style.alignItems = "center";
-    strWrap.style.gap = "10px";
-    const str = document.createElement("input");
-    str.type = "checkbox";
-    str.checked = !!t.strum;
-    const meta = instrumentMeta(t.instrument);
-    str.disabled = !meta.supportsStrum;
-    str.addEventListener("change", () => { t.strum = !!str.checked; });
-    const strLab = document.createElement("div");
-    strLab.className = "smallLabel";
-    strLab.textContent = meta.supportsStrum ? "Strum" : "Strum (n/a)";
-    strWrap.appendChild(str);
-    strWrap.appendChild(strLab);
-    const strBox = document.createElement("div");
-    strBox.style.display = "grid";
-    strBox.style.gap = "6px";
-    const strTitle = document.createElement("div");
-    strTitle.className = "smallLabel";
-    strTitle.textContent = "Feel";
-    strBox.appendChild(strTitle);
-    strBox.appendChild(strWrap);
-    mid2.appendChild(strBox);
+    if (t.role === "mic"){
+      const fx = t.micFx || (t.micFx = { rev:0.25, delay:0.12, comp:0.30, tune:0.15, autoTune:true, tuneKey:"C" });
+
+      const micRev = document.createElement("input");
+      micRev.type = "range"; micRev.min = "0"; micRev.max = "1"; micRev.step = "0.01"; micRev.value = String(fx.rev);
+      micRev.addEventListener("input", () => { fx.rev = parseFloat(micRev.value); rebuildMicRouting(); });
+      controls.appendChild(wrapCtl("Mic Rev", micRev));
+
+      const micDly = document.createElement("input");
+      micDly.type = "range"; micDly.min = "0"; micDly.max = "1"; micDly.step = "0.01"; micDly.value = String(fx.delay);
+      micDly.addEventListener("input", () => { fx.delay = parseFloat(micDly.value); rebuildMicRouting(); });
+      controls.appendChild(wrapCtl("Delay", micDly));
+
+      const micComp = document.createElement("input");
+      micComp.type = "range"; micComp.min = "0"; micComp.max = "1"; micComp.step = "0.01"; micComp.value = String(fx.comp);
+      micComp.addEventListener("input", () => { fx.comp = parseFloat(micComp.value); rebuildMicRouting(); });
+      controls.appendChild(wrapCtl("Comp", micComp));
+
+      const tuneOn = document.createElement("input");
+      tuneOn.type = "checkbox";
+      tuneOn.checked = fx.autoTune !== false;
+      tuneOn.addEventListener("change", () => { fx.autoTune = !!tuneOn.checked; rebuildMicRouting(); });
+      controls.appendChild(wrapCtl("AutoTune", tuneOn));
+
+      const tuneKeySel = document.createElement("select");
+      NOTE_NAMES.forEach(n => {
+        const o = document.createElement("option");
+        o.value = n; o.textContent = n;
+        if ((fx.tuneKey || "C") === n) o.selected = true;
+        tuneKeySel.appendChild(o);
+      });
+      tuneKeySel.addEventListener("change", () => { fx.tuneKey = tuneKeySel.value; rebuildMicRouting(); });
+      controls.appendChild(wrapCtl("Tune Key", tuneKeySel));
+
+      const micTune = document.createElement("input");
+      micTune.type = "range"; micTune.min = "0"; micTune.max = "1"; micTune.step = "0.01"; micTune.value = String(fx.tune);
+      micTune.addEventListener("input", () => { fx.tune = parseFloat(micTune.value); rebuildMicRouting(); });
+      controls.appendChild(wrapCtl("Tune Amt", micTune));
+    } else {
+      const strWrap = document.createElement("div");
+      strWrap.style.display = "flex";
+      strWrap.style.alignItems = "center";
+      strWrap.style.gap = "8px";
+      const str = document.createElement("input");
+      str.type = "checkbox";
+      str.checked = !!t.strum;
+      const meta = instrumentMeta(t.instrument);
+      str.disabled = !meta.supportsStrum;
+      str.addEventListener("change", () => { t.strum = !!str.checked; });
+      const strLab = document.createElement("div");
+      strLab.className = "smallLabel";
+      strLab.textContent = meta.supportsStrum ? "Strum" : "Strum (n/a)";
+      strWrap.appendChild(str);
+      strWrap.appendChild(strLab);
+      controls.appendChild(wrapCtl("Feel", strWrap));
+    }
 
     const btns = document.createElement("div");
     btns.className = "trackBtns";
@@ -1307,16 +1506,18 @@ function renderTracks(){
     `;
     const [armBtn, muteBtn, clearBtn] = btns.querySelectorAll("button");
     armBtn.addEventListener("click", () => setArmedTrack(t.id));
-    muteBtn.addEventListener("click", () => toggleMute(t.id));
+    muteBtn.addEventListener("click", () => { toggleMute(t.id); });
     clearBtn.addEventListener("click", () => clearTrack(t.id));
 
     row.appendChild(left);
-    row.appendChild(mid1);
-    row.appendChild(mid2);
+    row.appendChild(controls);
     row.appendChild(btns);
     tracksEl.appendChild(row);
   });
+
+  rebuildMicRouting();
 }
+
 
 function wrapCtl(label, el){
   const box = document.createElement("div");
@@ -1331,8 +1532,9 @@ function wrapCtl(label, el){
 }
 
 function updateLoopBadge(){
-  const total = tracks.reduce((s,t)=>s+t.events.length,0);
-  loopBadge.textContent = total ? "LOOP" : "EMPTY";
+  const totalTrack = tracks.reduce((sum,t)=>sum+t.events.length,0);
+  const total = totalTrack + simpleLoopEvents.length;
+  if (loopBadge) loopBadge.textContent = total ? "LOOP" : "EMPTY";
 }
 
 // timing
@@ -1344,19 +1546,68 @@ function beatsToSeconds(beats){
   return beats / bps;
 }
 function nowBeats(){
-  if (!ac) return 0;
-  const sec = ac.currentTime - loopStartTime;
+  // Fallback to wall clock when AudioContext is blocked/suspended so
+  // playhead + recording still advance after pressing Record.
+  const useWallClock = !ac || ac.state !== "running";
+  const sec = useWallClock
+    ? Math.max(0, (performance.now() - transportStartMs) / 1000)
+    : Math.max(0, ac.currentTime - loopStartTime);
   const bps = bpm() / 60;
   return sec * bps;
 }
 
 // playback (no duplicates)
+
+function updatePlayheadUI(){
+  if (!isPlaying) return;
+  const lb = loopBeats();
+  const beatNow = nowBeats();
+  const frac = (beatNow % lb) / lb;
+  const { blocksEl, playheadEl } = getPlayheadElements();
+  if (blocksEl && playheadEl){
+    const w = blocksEl.clientWidth || 0;
+    playheadEl.style.transform = `translateX(${Math.floor(frac * w)}px)`;
+  }
+}
+
+function ensurePlayheadLoop(){
+  clearInterval(playheadTimer);
+  playheadTimer = setInterval(() => {
+    if (!isPlaying) return;
+    updatePlayheadUI();
+  }, 33);
+}
+
+function getPlayheadElements(){
+  const b = blocks || document.getElementById("blocks");
+  let p = playhead || document.getElementById("playhead");
+  if (b && !p){
+    p = document.createElement("div");
+    p.id = "playhead";
+    p.className = "playhead";
+    b.appendChild(p);
+  }
+  return { blocksEl:b, playheadEl:p };
+}
+
+function playRecordedEvent(ev, when){
+  const durSec = beatsToSeconds(ev.dBeats ?? 1.0);
+  if (ev.padIndex >= 16){
+    const type = DRUM_PAD_MAP[(ev.padIndex - 16) % DRUM_PAD_MAP.length] || "hat";
+    drumHit(ac, dry, wet, type, when, 0.95, 0.15);
+    return;
+  }
+  const chordObj = chordForPad(ev.padIndex, keySel.value);
+  const freqs = chordObj.freqs;
+  playScheduled(ac, dry, wet, freqs, when, durSec, 1.0, "classic_piano", false, 0.22);
+}
+
 function scheduleLoopPlayback(){
   clearInterval(playTimer);
   if (!ac) return;
 
   updateLoopBadge();
-  loopInfo.textContent = `Loop: ${bars()} bars • Quantize: ON`;
+  if (loopInfo) loopInfo.textContent = `Loop: ${bars()} bars • Quantize: ON`;
 renderTicks();
 
   playTimer = setInterval(() => {
@@ -1368,6 +1619,23 @@ renderTicks();
     const lb = loopBeats();
     const lookaheadSec = 0.14;
     const lookaheadBeats = lookaheadSec * bps;
+
+    const totalTrackEvents = tracks.reduce((sum,t)=>sum+t.events.length,0);
+    if (totalTrackEvents === 0){
+      simpleLoopEvents.forEach(ev => {
+        const tInLoop = (ev.tBeats % lb + lb) % lb;
+        let base = Math.floor(absBeatNow / lb) * lb;
+        let nextAbs = base + tInLoop;
+        if (nextAbs < absBeatNow - 0.0001) nextAbs += lb;
+        const delta = nextAbs - absBeatNow;
+        if (delta <= lookaheadBeats){
+          if (ev.lastScheduledAbs === nextAbs) return;
+          ev.lastScheduledAbs = nextAbs;
+          const when = tNow + (delta / bps);
+          playRecordedEvent(ev, when);
+        }
+      });
+    }
 
     tracks.forEach(track => {
       if (track.muted) return;
@@ -1389,6 +1657,9 @@ renderTicks();
 
           const when = tNow + (delta / bps);
           
+          if (track.role === "mic") {
+            return;
+          }
           if (track.role === "drums") {
             const type = DRUM_PAD_MAP[ev.padIndex % DRUM_PAD_MAP.length] || "hat";
             drumHit(ac, dry, wet, type, when, track.vol, track.rev);
@@ -1407,11 +1678,7 @@ renderTicks();
   cancelAnimationFrame(rafId);
   const tick = () => {
     if (!isPlaying || !ac) return;
-    const lb = loopBeats();
-    const beatNow = nowBeats();
-    const frac = (beatNow % lb) / lb;
-    const w = blocks.clientWidth;
-    playhead.style.transform = `translateX(${Math.floor(frac * w)}px)`;
+    updatePlayheadUI();
     rafId = requestAnimationFrame(tick);
   };
   rafId = requestAnimationFrame(tick);
@@ -1431,30 +1698,37 @@ function padHoldStart(padIndex, pointerId){
     const sub = padIndex - 16; // 0..7
     const drumTrack = (armed && armed.role === "drums") ? armed : ensureDrumTrack();
     const type = DRUM_PAD_MAP[sub] || "hat";
-    drumHit(ac, dry, wet, type, ac.currentTime, drumTrack.vol, drumTrack.rev);
-    activeHolds.set(pointerId, { stopFn: ()=>{}, padIndex });
-
-    if (isRecording && isPlaying){
-      const b = nowBeats();
-      const q = quantizeBeat(b, 0.25) % loopBeats();
-      const id = nextEventId++;
-      drumTrack.events.push({ id, tBeats: q, padIndex: sub, dBeats: 0.25 });
-      updateLoopBadge();
-      renderTracks();
-    }
+    const speed = Math.max(0.25, drumPadRates[sub] || 1.0);
+    const hitDur = Math.max(0.06, 0.25 / speed);
+    const hitNow = () => {
+      drumHit(ac, dry, wet, type, ac.currentTime, drumTrack.vol, drumTrack.rev);
+      if (isRecording && isPlaying){
+        const b = nowBeats();
+        const q = quantizeBeat(b, 0.25) % loopBeats();
+        const id = nextEventId++;
+        drumTrack.events.push({ id, tBeats: q, padIndex: sub, dBeats: hitDur });
+        simpleLoopEvents.push({ id: nextSimpleEventId++, tBeats: q, padIndex: 16 + sub, dBeats: hitDur, lastScheduledAbs:null });
+        updateLoopBadge();
+        renderTracks();
+      }
+    };
+    hitNow();
+    const repMs = Math.max(55, Math.floor((250 / speed)));
+    const repTimer = setInterval(hitNow, repMs);
+    activeHolds.set(pointerId, { stopFn: ()=>clearInterval(repTimer), padIndex });
     return;
   }
 
   // CHORD PADS: 0..15
   const chordObj = chordForPad(padIndex, keySel.value);
   lastChord.textContent = `Last: ${chordObj.label}`;
-  highlightKeyOnCircle(chordObj.rootName || keySel.value);
+  highlightChordOnCircle(chordObj);
   setChordDisplay(chordObj);
 
   // If the armed track is drums, auto-arm the first non-drum track (or create one)
   let target = armed;
-  if (target && target.role === "drums"){
-    target = tracks.find(t => t.role !== "drums") || null;
+  if (target && (target.role === "drums" || target.role === "mic")){
+    target = tracks.find(t => t.role !== "drums" && t.role !== "mic") || null;
     if (!target){
       addTrack("Track 1");
       target = tracks[tracks.length-1];
@@ -1474,14 +1748,22 @@ function padHoldStart(padIndex, pointerId){
   const liveStop = startChord(ac, dry, wet, freqs, ac.currentTime, vol, inst, strm, rvs);
   activeHolds.set(pointerId, { stopFn: liveStop, padIndex });
 
-  if (isRecording && isPlaying && target){
-    const b = nowBeats();
-    const q = quantizeBeat(b, 0.25) % loopBeats();
-    const id = nextEventId++;
-    target.events.push({ id, tBeats: q, padIndex, dBeats: 1.0 });
-    activeHolds.get(pointerId).rec = { id, trackId: target.id, startBeat: q };
-    updateLoopBadge();
-    renderTracks();
+  if (isRecording && isPlaying){
+    simpleLoopEvents.push({ id: nextSimpleEventId++, tBeats: quantizeBeat(nowBeats(),0.25) % loopBeats(), padIndex, dBeats: 1.0, lastScheduledAbs:null });
+    let recTrack = target || getArmedTrack() || tracks.find(t => t.role !== "mic") || null;
+    if (!recTrack){
+      addTrack("Track 1");
+      recTrack = getArmedTrack() || tracks[0] || null;
+    }
+    if (recTrack){
+      const b = nowBeats();
+      const q = quantizeBeat(b, 0.25) % loopBeats();
+      const id = nextEventId++;
+      recTrack.events.push({ id, tBeats: q, padIndex, dBeats: 1.0 });
+      activeHolds.get(pointerId).rec = { id, trackId: recTrack.id, startBeat: q };
+      updateLoopBadge();
+      renderTracks();
+    }
   }
 }
 function padHoldEnd(pointerId){
@@ -1523,7 +1805,8 @@ function start(){
   if (ac.state === "suspended") ac.resume();
 
   isPlaying = true;
-  loopStartTime = ac.currentTime;
+  transportStartMs = performance.now();
+  loopStartTime = ac ? ac.currentTime : 0;
 
   // reset scheduling guards each start (fresh loopStart)
   tracks.forEach(t => t.lastScheduledAbs = {});
@@ -1531,11 +1814,13 @@ function start(){
   playBtn.classList.add("on");
   modePill.textContent = isRecording ? "Mode: Record" : "Mode: Play";
   scheduleLoopPlayback();
+  ensurePlayheadLoop();
 }
 
 function stop(){
   isPlaying = false;
   isRecording = false;
+  transportStartMs = 0;
 
   playBtn.classList.remove("on");
   recBtn.classList.remove("on");
@@ -1543,17 +1828,43 @@ function stop(){
 
   clearInterval(playTimer);
   playTimer = null;
+  clearInterval(playheadTimer);
+  playheadTimer = null;
   cancelAnimationFrame(rafId);
 
-  playhead.style.transform = `translateX(0px)`;
+  const { playheadEl } = getPlayheadElements();
+  if (playheadEl) playheadEl.style.transform = `translateX(0px)`;
   [...activeHolds.keys()].forEach(pid => padHoldEnd(pid));
 }
 
 function toggleRecord(){
   if (!isPlaying) start();
+  if (!playTimer && ac) scheduleLoopPlayback();
+  ensurePlayheadLoop();
+
+  let armed = getArmedTrack();
+  if (!armed){
+    if (tracks.length === 0) addTrack("Track 1");
+    armed = getArmedTrack() || tracks[0] || null;
+    if (armed && !armedTrackId) setArmedTrack(armed.id);
+  }
+
+  // keep drums armed for drum recording; only auto-shift away from mic tracks
+  if (armed && armed.role === "mic"){
+    const melodic = tracks.find(t => t.role !== "mic");
+    if (melodic) setArmedTrack(melodic.id);
+  }
+
   isRecording = !isRecording;
+  if (isRecording && !transportStartMs) transportStartMs = performance.now();
+  if (isRecording && ac && !isPlaying){
+    isPlaying = true;
+    loopStartTime = ac.currentTime;
+  }
   recBtn.classList.toggle("on", isRecording);
   modePill.textContent = isRecording ? "Mode: Record" : "Mode: Play";
+  setAudioStateText(isRecording ? "Audio: on • Recording" : "Audio: on");
+  if (isRecording) updateLoopBadge();
 }
 
 // Bounce (one loop cycle)
@@ -1653,27 +1964,38 @@ safeMode = safeModeEl ? !!safeModeEl.checked : true;
 if (safeModeEl){
   safeModeEl.addEventListener("change", ()=>{ safeMode = !!safeModeEl.checked; });
 }
+micMonitorOn = micMonitorEl ? !!micMonitorEl.checked : true;
+if (micMonitorEl){
+  micMonitorEl.addEventListener("change", ()=>{
+    micMonitorOn = !!micMonitorEl.checked;
+    rebuildMicRouting();
+  });
+}
 
 // controls
-playBtn.addEventListener("click", () => {
+safeOn(playBtn, "click", () => {
   ensureMasterAudible(); if (!isPlaying) start(); });
-stopBtn.addEventListener("click", stop);
-recBtn.addEventListener("click", toggleRecord);
+safeOn(stopBtn, "click", stop);
+safeOn(recBtn, "click", toggleRecord);
 
-keySel.addEventListener("change", () => renderPads());
-bpmEl.addEventListener("change", () => { bpmEl.value = String(bpm()); if (isPlaying) scheduleLoopPlayback(); });
-barsSel.addEventListener("change", () => {
+safeOn(keySel, "change", () => {
+  renderPadsSafe();
+  highlightKeyOnCircle(keySel.value);
+  setChordDisplay(chordForPad(0, keySel.value));
+});
+safeOn(bpmEl, "change", () => { bpmEl.value = String(bpm()); if (isPlaying) scheduleLoopPlayback(); });
+safeOn(barsSel, "change", () => {
   const lb = loopBeats();
   tracks.forEach(t => { t.events = t.events.map(e => ({...e, tBeats: e.tBeats % lb, dBeats: Math.min(e.dBeats ?? 1.0, lb) })); t.lastScheduledAbs = {}; });
   if (isPlaying) scheduleLoopPlayback();
-  loopInfo.textContent = `Loop: ${bars()} bars • Quantize: ON`;
+  if (loopInfo) loopInfo.textContent = `Loop: ${bars()} bars • Quantize: ON`;
   renderTicks();
 });
-revEl.addEventListener("input", () => { if (wet) wet.gain.value = parseFloat(revEl.value); });
+safeOn(revEl, "input", () => { if (wet) wet.gain.value = parseFloat(revEl.value); });
 
-addTrackBtn.addEventListener("click", () => addTrack());
-clearAllBtn.addEventListener("click", () => clearAll());
-exportBtn.addEventListener("click", () => bounceWav());
+safeOn(addTrackBtn, "click", () => addTrack());
+safeOn(clearAllBtn, "click", () => clearAll());
+safeOn(exportBtn, "click", () => bounceWav());
 if (panicBtn){
   panicBtn.addEventListener("click", ()=>{
     try{ stop(); }catch(_){ }
@@ -1711,13 +2033,15 @@ window.addEventListener("keydown", (e) => {
 });
 
 // init
-renderPads();
-  initCircleOfFifths();
+renderPadsSafe();
+initCircleOfFifths();
+if (keySel){
   highlightKeyOnCircle(keySel.value);
   setChordDisplay(chordForPad(0, keySel.value));
+}
 addTrack("Track 1");
 updateLoopBadge();
-loopInfo.textContent = `Loop: ${bars()} bars • Quantize: ON`;
+if (loopInfo) loopInfo.textContent = `Loop: ${bars()} bars • Quantize: ON`;
 
 
 document.body.addEventListener('pointerdown', () => { try{ ensureAudio(); if(ac && ac.state==='suspended') ac.resume(); }catch(_){ } }, { once:false });
