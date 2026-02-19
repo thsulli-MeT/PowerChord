@@ -206,6 +206,8 @@ let activeHolds = new Map(); // pointerId -> { stopFn, recEventId?, trackId?, st
 let nextEventId = 1;
 let padIndexByChord = new Map();
 const drumPadRates = Array(8).fill(1.0);
+let simpleLoopEvents = [];
+let nextSimpleEventId = 1;
 
 // helpers
 function clamp(v,a,b){ return Math.min(b, Math.max(a,v)); }
@@ -1368,6 +1370,7 @@ function toggleMute(id){
 
 function clearAll(){
   tracks.forEach(t => { t.events = []; t.lastScheduledAbs = {}; });
+  simpleLoopEvents = [];
   updateLoopBadge();
   renderTracks();
 }
@@ -1528,7 +1531,8 @@ function wrapCtl(label, el){
 }
 
 function updateLoopBadge(){
-  const total = tracks.reduce((s,t)=>s+t.events.length,0);
+  const totalTrack = tracks.reduce((sum,t)=>sum+t.events.length,0);
+  const total = totalTrack + simpleLoopEvents.length;
   if (loopBadge) loopBadge.textContent = total ? "LOOP" : "EMPTY";
 }
 
@@ -1581,6 +1585,18 @@ function getPlayheadElements(){
   return { blocksEl:b, playheadEl:p };
 }
 
+function playRecordedEvent(ev, when){
+  const durSec = beatsToSeconds(ev.dBeats ?? 1.0);
+  if (ev.padIndex >= 16){
+    const type = DRUM_PAD_MAP[(ev.padIndex - 16) % DRUM_PAD_MAP.length] || "hat";
+    drumHit(ac, dry, wet, type, when, 0.95, 0.15);
+    return;
+  }
+  const chordObj = chordForPad(ev.padIndex, keySel.value);
+  const freqs = chordObj.freqs;
+  playScheduled(ac, dry, wet, freqs, when, durSec, 1.0, "classic_piano", false, 0.22);
+}
+
 function scheduleLoopPlayback(){
   clearInterval(playTimer);
   if (!ac) return;
@@ -1598,6 +1614,23 @@ renderTicks();
     const lb = loopBeats();
     const lookaheadSec = 0.14;
     const lookaheadBeats = lookaheadSec * bps;
+
+    const totalTrackEvents = tracks.reduce((sum,t)=>sum+t.events.length,0);
+    if (totalTrackEvents === 0){
+      simpleLoopEvents.forEach(ev => {
+        const tInLoop = (ev.tBeats % lb + lb) % lb;
+        let base = Math.floor(absBeatNow / lb) * lb;
+        let nextAbs = base + tInLoop;
+        if (nextAbs < absBeatNow - 0.0001) nextAbs += lb;
+        const delta = nextAbs - absBeatNow;
+        if (delta <= lookaheadBeats){
+          if (ev.lastScheduledAbs === nextAbs) return;
+          ev.lastScheduledAbs = nextAbs;
+          const when = tNow + (delta / bps);
+          playRecordedEvent(ev, when);
+        }
+      });
+    }
 
     tracks.forEach(track => {
       if (track.muted) return;
@@ -1669,6 +1702,7 @@ function padHoldStart(padIndex, pointerId){
         const q = quantizeBeat(b, 0.25) % loopBeats();
         const id = nextEventId++;
         drumTrack.events.push({ id, tBeats: q, padIndex: sub, dBeats: hitDur });
+        simpleLoopEvents.push({ id: nextSimpleEventId++, tBeats: q, padIndex: 16 + sub, dBeats: hitDur, lastScheduledAbs:null });
         updateLoopBadge();
         renderTracks();
       }
@@ -1710,6 +1744,7 @@ function padHoldStart(padIndex, pointerId){
   activeHolds.set(pointerId, { stopFn: liveStop, padIndex });
 
   if (isRecording && isPlaying){
+    simpleLoopEvents.push({ id: nextSimpleEventId++, tBeats: quantizeBeat(nowBeats(),0.25) % loopBeats(), padIndex, dBeats: 1.0, lastScheduledAbs:null });
     let recTrack = target || getArmedTrack() || tracks.find(t => t.role !== "mic") || null;
     if (!recTrack){
       addTrack("Track 1");
