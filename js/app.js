@@ -192,6 +192,7 @@ function safeOn(el, evt, handler){
 let isPlaying = false;
 let isRecording = false;
 let loopStartTime = 0;
+let transportStartMs = 0;
 let playTimer = null;
 let rafId = null;
 let playheadTimer = null;
@@ -1545,8 +1546,12 @@ function beatsToSeconds(beats){
   return beats / bps;
 }
 function nowBeats(){
-  if (!ac) return 0;
-  const sec = ac.currentTime - loopStartTime;
+  // Fallback to wall clock when AudioContext is blocked/suspended so
+  // playhead + recording still advance after pressing Record.
+  const useWallClock = !ac || ac.state !== "running";
+  const sec = useWallClock
+    ? Math.max(0, (performance.now() - transportStartMs) / 1000)
+    : Math.max(0, ac.currentTime - loopStartTime);
   const bps = bpm() / 60;
   return sec * bps;
 }
@@ -1554,7 +1559,7 @@ function nowBeats(){
 // playback (no duplicates)
 
 function updatePlayheadUI(){
-  if (!isPlaying || !ac) return;
+  if (!isPlaying) return;
   const lb = loopBeats();
   const beatNow = nowBeats();
   const frac = (beatNow % lb) / lb;
@@ -1800,7 +1805,8 @@ function start(){
   if (ac.state === "suspended") ac.resume();
 
   isPlaying = true;
-  loopStartTime = ac.currentTime;
+  transportStartMs = performance.now();
+  loopStartTime = ac ? ac.currentTime : 0;
 
   // reset scheduling guards each start (fresh loopStart)
   tracks.forEach(t => t.lastScheduledAbs = {});
@@ -1814,6 +1820,7 @@ function start(){
 function stop(){
   isPlaying = false;
   isRecording = false;
+  transportStartMs = 0;
 
   playBtn.classList.remove("on");
   recBtn.classList.remove("on");
@@ -1849,6 +1856,7 @@ function toggleRecord(){
   }
 
   isRecording = !isRecording;
+  if (isRecording && !transportStartMs) transportStartMs = performance.now();
   if (isRecording && ac && !isPlaying){
     isPlaying = true;
     loopStartTime = ac.currentTime;
