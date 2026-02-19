@@ -1344,7 +1344,7 @@ function setArmedTrack(id){
   armedTrackId = id;
   tracks.forEach(t => t.armed = (t.id === id));
   const idx = tracks.findIndex(t => t.id === id);
-  armedPill.textContent = `Armed: Track ${idx >= 0 ? (idx+1) : 1}`;
+  if (armedPill) armedPill.textContent = `Armed: Track ${idx >= 0 ? (idx+1) : 1}`;
   renderTracks();
 }
 
@@ -1373,6 +1373,7 @@ function clearAll(){
 }
 
 function renderTracks(){
+  if (!tracksEl) return;
   tracksEl.innerHTML = "";
   tracks.forEach((t) => {
     const row = document.createElement("div");
@@ -1528,7 +1529,7 @@ function wrapCtl(label, el){
 
 function updateLoopBadge(){
   const total = tracks.reduce((s,t)=>s+t.events.length,0);
-  loopBadge.textContent = total ? "LOOP" : "EMPTY";
+  if (loopBadge) loopBadge.textContent = total ? "LOOP" : "EMPTY";
 }
 
 // timing
@@ -1708,14 +1709,21 @@ function padHoldStart(padIndex, pointerId){
   const liveStop = startChord(ac, dry, wet, freqs, ac.currentTime, vol, inst, strm, rvs);
   activeHolds.set(pointerId, { stopFn: liveStop, padIndex });
 
-  if (isRecording && isPlaying && target){
-    const b = nowBeats();
-    const q = quantizeBeat(b, 0.25) % loopBeats();
-    const id = nextEventId++;
-    target.events.push({ id, tBeats: q, padIndex, dBeats: 1.0 });
-    activeHolds.get(pointerId).rec = { id, trackId: target.id, startBeat: q };
-    updateLoopBadge();
-    renderTracks();
+  if (isRecording && isPlaying){
+    let recTrack = target || getArmedTrack() || tracks.find(t => t.role !== "mic") || null;
+    if (!recTrack){
+      addTrack("Track 1");
+      recTrack = getArmedTrack() || tracks[0] || null;
+    }
+    if (recTrack){
+      const b = nowBeats();
+      const q = quantizeBeat(b, 0.25) % loopBeats();
+      const id = nextEventId++;
+      recTrack.events.push({ id, tBeats: q, padIndex, dBeats: 1.0 });
+      activeHolds.get(pointerId).rec = { id, trackId: recTrack.id, startBeat: q };
+      updateLoopBadge();
+      renderTracks();
+    }
   }
 }
 function padHoldEnd(pointerId){
@@ -1793,9 +1801,10 @@ function toggleRecord(){
   ensurePlayheadLoop();
 
   let armed = getArmedTrack();
-  if (!armed && tracks.length === 0){
-    addTrack("Track 1");
-    armed = getArmedTrack();
+  if (!armed){
+    if (tracks.length === 0) addTrack("Track 1");
+    armed = getArmedTrack() || tracks[0] || null;
+    if (armed && !armedTrackId) setArmedTrack(armed.id);
   }
 
   // keep drums armed for drum recording; only auto-shift away from mic tracks
