@@ -122,6 +122,7 @@ const playBtn= document.getElementById("playBtn");
 const stopBtn= document.getElementById("stopBtn");
 const recBtn = document.getElementById("recBtn");
 const exportBtn = document.getElementById("exportBtn");
+const exportTracksBtn = document.getElementById("exportTracksBtn");
 const panicBtn = document.getElementById("panicBtn");
 const rockBtn = document.getElementById("rockBtn");
 const hiphopBtn = document.getElementById("hiphopBtn");
@@ -1503,11 +1504,18 @@ function renderTracks(){
       <button class="btn small arm ${t.armed ? "on" : ""}">Arm</button>
       <button class="btn small mute ${t.muted ? "on" : ""}">Mute</button>
       <button class="btn small clear">Clear</button>
+      <button class="btn small dl">WAV</button>
     `;
-    const [armBtn, muteBtn, clearBtn] = btns.querySelectorAll("button");
+    const [armBtn, muteBtn, clearBtn, dlBtn] = btns.querySelectorAll("button");
     armBtn.addEventListener("click", () => setArmedTrack(t.id));
     muteBtn.addEventListener("click", () => { toggleMute(t.id); });
     clearBtn.addEventListener("click", () => clearTrack(t.id));
+    dlBtn.addEventListener("click", async () => {
+      const backup = tracks.map(x => x.muted);
+      tracks.forEach(x => x.muted = (x.id !== t.id));
+      try { await bounceTracks(); }
+      finally { tracks.forEach((x, idx) => x.muted = backup[idx]); renderTracks(); }
+    });
 
     row.appendChild(left);
     row.appendChild(controls);
@@ -1544,6 +1552,20 @@ function quantizeBeat(beat, grid = 0.25){
 function beatsToSeconds(beats){
   const bps = bpm() / 60;
   return beats / bps;
+}
+
+function scheduleTrackEventToOffline(off, track, ev, dryNode, wetNode){
+  if (track.role === "mic") return;
+  const whenSec = beatsToSeconds(ev.tBeats);
+  const durSec = beatsToSeconds(ev.dBeats ?? 1.0);
+  if (track.role === "drums") {
+    const type = DRUM_PAD_MAP[ev.padIndex % DRUM_PAD_MAP.length] || "hat";
+    drumHit(off, dryNode, wetNode, type, whenSec, track.vol, track.rev ?? 0.12);
+    return;
+  }
+  const chordObj = chordForPad(ev.padIndex, keySel.value);
+  const freqs = freqsForRole(track.role, chordObj);
+  playScheduled(off, dryNode, wetNode, freqs, whenSec, durSec, track.vol, track.instrument, track.strum, track.rev);
 }
 function nowBeats(){
   // Fallback to wall clock when AudioContext is blocked/suspended so
@@ -1896,23 +1918,65 @@ async function bounceWav(){
 
   tracks.forEach(track => {
     if (track.muted) return;
-    track.events.forEach(ev => {
-      const whenSec = beatsToSeconds(ev.tBeats);
-      const chordObj = chordForPad(ev.padIndex, keySel.value);
-      const freqs = freqsForRole(track.role, chordObj);
-      const durSec = beatsToSeconds(ev.dBeats ?? 1.0);
-      playScheduled(off, dry, wet, freqs, whenSec, durSec, track.vol, track.instrument, track.strum, track.rev);
-    });
+    track.events.forEach(ev => scheduleTrackEventToOffline(off, track, ev, dry, wet));
   });
 
   const buf = await off.startRendering();
   const wavBlob = audioBufferToWavBlob(buf);
   const a = document.createElement("a");
   const stamp = new Date().toISOString().slice(0,19).replace(/[:T]/g,"-");
-  a.download = `powerschord-bounce-${stamp}.wav`;
+  a.download = `powerschord-mix-${stamp}.wav`;
   a.href = URL.createObjectURL(wavBlob);
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 3000);
+}
+
+async function bounceTracks(){
+  const activeTracks = tracks.filter(t => !t.muted && t.role !== "mic");
+  if (!activeTracks.length){
+    setAudioStateText("No audible tracks to export");
+    return;
+  }
+
+  const lb = loopBeats();
+  const sr = 44100;
+  const durationSec = beatsToSeconds(lb);
+  const stamp = new Date().toISOString().slice(0,19).replace(/[:T]/g,"-");
+
+  for (let i=0;i<activeTracks.length;i++){
+    const track = activeTracks[i];
+    const off = new OfflineAudioContext(2, Math.ceil(durationSec * sr), sr);
+
+    const master = off.createGain();
+    master.gain.value = 0.95;
+
+    const dry = off.createGain();
+    const wet = off.createGain();
+    dry.gain.value = 1.0;
+    wet.gain.value = parseFloat(revEl.value);
+
+    const convolver = off.createConvolver();
+    convolver.buffer = makeImpulse(off, 1.8, 2.0);
+
+    dry.connect(master);
+    wet.connect(convolver);
+    convolver.connect(master);
+    master.connect(off.destination);
+
+    track.events.forEach(ev => scheduleTrackEventToOffline(off, track, ev, dry, wet));
+
+    const buf = await off.startRendering();
+    const wavBlob = audioBufferToWavBlob(buf);
+    const a = document.createElement("a");
+    const safeName = (track.name || `track-${i+1}`).replace(/[^a-z0-9-_]+/gi, "_").replace(/^_+|_+$/g, "");
+    a.download = `powerschord-${String(i+1).padStart(2,"0")}-${safeName || "track"}-${stamp}.wav`;
+    a.href = URL.createObjectURL(wavBlob);
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 3000);
+    await new Promise(r => setTimeout(r, 120));
+  }
+
+  setAudioStateText("Track WAV export complete");
 }
 
 function audioBufferToWavBlob(buffer){
@@ -1999,6 +2063,7 @@ safeOn(revEl, "input", () => { if (wet) wet.gain.value = parseFloat(revEl.value)
 safeOn(addTrackBtn, "click", () => addTrack());
 safeOn(clearAllBtn, "click", () => clearAll());
 safeOn(exportBtn, "click", () => bounceWav());
+safeOn(exportTracksBtn, "click", () => bounceTracks());
 if (panicBtn){
   panicBtn.addEventListener("click", ()=>{
     try{ stop(); }catch(_){ }
@@ -2042,7 +2107,22 @@ if (keySel){
   highlightKeyOnCircle(keySel.value);
   setChordDisplay(chordForPad(0, keySel.value));
 }
-addTrack("Track 1");
+addTrack("Instrument 1");
+const firstTrack = tracks[0];
+if (firstTrack){
+  firstTrack.role = "chord";
+  firstTrack.instrument = "classic_piano";
+}
+
+addTrack("Drums 1");
+const secondTrack = tracks[1];
+if (secondTrack){
+  secondTrack.role = "drums";
+  secondTrack.instrument = "drum_kit";
+  secondTrack.rev = 0.12;
+  secondTrack.vol = 0.95;
+}
+if (firstTrack) setArmedTrack(firstTrack.id);
 updateLoopBadge();
 if (loopInfo) loopInfo.textContent = `Loop: ${bars()} bars • Quantize: ON`;
 
