@@ -562,3 +562,32 @@ canvas{
 }
 
 #micMonitor{ accent-color: #22c55e; }
+
+
+.trackClips{
+  margin-top: 6px;
+  display:grid;
+  gap:3px;
+}
+.trackClipLane{
+  position:relative;
+  height: 16px;
+  border-radius: 6px;
+  background: rgba(255,255,255,.06);
+  overflow:hidden;
+}
+.trackClip{
+  position:absolute;
+  top:1px;
+  bottom:1px;
+  border-radius: 5px;
+  background: linear-gradient(135deg, rgba(96,165,250,.78), rgba(59,130,246,.52));
+  border:1px solid rgba(255,255,255,.35);
+  color:#fff;
+  font-size:10px;
+  line-height:14px;
+  padding:0 4px;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}

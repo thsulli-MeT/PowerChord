@@ -1377,6 +1377,63 @@ function clearAll(){
   renderTracks();
 }
 
+function countEventsAtBeat(track, beat, eps=0.001){
+  if (!track || !Array.isArray(track.events)) return 0;
+  return track.events.reduce((n, ev) => {
+    const t = ((ev.tBeats % loopBeats()) + loopBeats()) % loopBeats();
+    return Math.abs(t - beat) <= eps ? (n + 1) : n;
+  }, 0);
+}
+
+function buildTrackClipLanes(track){
+  const wrap = document.createElement("div");
+  wrap.className = "trackClips";
+
+  const lb = Math.max(1, loopBeats());
+  for (let i=0;i<3;i++){
+    const lane = document.createElement("div");
+    lane.className = "trackClipLane";
+    wrap.appendChild(lane);
+  }
+
+  const events = (track.events || []).slice().sort((a,b)=>a.tBeats-b.tBeats);
+  const group = new Map();
+  events.forEach(ev => {
+    const key = (Math.round((((ev.tBeats % lb) + lb) % lb) * 1000) / 1000).toFixed(3);
+    if (!group.has(key)) group.set(key, []);
+    const arr = group.get(key);
+    if (arr.length < 3) arr.push(ev);
+  });
+
+  group.forEach((arr, key) => {
+    const tBeats = parseFloat(key);
+    arr.forEach((ev, laneIdx) => {
+      const lane = wrap.children[laneIdx];
+      if (!lane) return;
+      const clip = document.createElement("div");
+      clip.className = "trackClip";
+      const left = (tBeats / lb) * 100;
+      const d = Math.max(0.25, ev.dBeats ?? 1.0);
+      const width = Math.max(2, (d / lb) * 100);
+      clip.style.left = left + "%";
+      clip.style.width = Math.min(100 - left, width) + "%";
+
+      let label = "Hit";
+      if (track.role === "drums"){
+        label = (DRUM_PAD_MAP[ev.padIndex % DRUM_PAD_MAP.length] || "drum").toUpperCase();
+      } else {
+        const c = chordForPad(ev.padIndex, keySel.value);
+        label = c.symbol || c.label || "Chord";
+      }
+      clip.textContent = label;
+      clip.title = `${label} @ beat ${tBeats.toFixed(2)}`;
+      lane.appendChild(clip);
+    });
+  });
+
+  return wrap;
+}
+
 function renderTracks(){
   if (!tracksEl) return;
   tracksEl.innerHTML = "";
@@ -1386,13 +1443,24 @@ function renderTracks(){
 
     const left = document.createElement("div");
     left.className = "trackName";
-    left.innerHTML = `
-      <span class="dot" style="background:${t.color}"></span>
-      <div>
-        <div style="font-weight:650">${t.name}</div>
-        <div class="trackMeta">${t.events.length ? `${t.events.length} hits` : "empty"} ${t.muted ? "• muted" : ""}</div>
-      </div>
-    `;
+
+    const dot = document.createElement("span");
+    dot.className = "dot";
+    dot.style.background = t.color;
+
+    const info = document.createElement("div");
+    const nameEl = document.createElement("div");
+    nameEl.style.fontWeight = "650";
+    nameEl.textContent = t.name;
+    const metaEl = document.createElement("div");
+    metaEl.className = "trackMeta";
+    metaEl.textContent = `${t.events.length ? `${t.events.length} clips` : "empty"} ${t.muted ? "• muted" : ""}`;
+    info.appendChild(nameEl);
+    info.appendChild(metaEl);
+    info.appendChild(buildTrackClipLanes(t));
+
+    left.appendChild(dot);
+    left.appendChild(info);
 
     const controls = document.createElement("div");
     controls.className = "trackCtl trackCtlInline";
@@ -1771,7 +1839,6 @@ function padHoldStart(padIndex, pointerId){
   activeHolds.set(pointerId, { stopFn: liveStop, padIndex });
 
   if (isRecording && isPlaying){
-    simpleLoopEvents.push({ id: nextSimpleEventId++, tBeats: quantizeBeat(nowBeats(),0.25) % loopBeats(), padIndex, dBeats: 1.0, lastScheduledAbs:null });
     let recTrack = target || getArmedTrack() || tracks.find(t => t.role !== "mic") || null;
     if (!recTrack){
       addTrack("Track 1");
@@ -1780,6 +1847,13 @@ function padHoldStart(padIndex, pointerId){
     if (recTrack){
       const b = nowBeats();
       const q = quantizeBeat(b, 0.25) % loopBeats();
+
+      if (recTrack.role !== "drums" && recTrack.role !== "mic" && countEventsAtBeat(recTrack, q) >= 3){
+        setAudioStateText("Max 3 stacked chords per track beat");
+        return;
+      }
+
+      simpleLoopEvents.push({ id: nextSimpleEventId++, tBeats: q, padIndex, dBeats: 1.0, lastScheduledAbs:null });
       const id = nextEventId++;
       recTrack.events.push({ id, tBeats: q, padIndex, dBeats: 1.0 });
       activeHolds.get(pointerId).rec = { id, trackId: recTrack.id, startBeat: q };
