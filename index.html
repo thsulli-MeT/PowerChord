@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>sMV PowerChord (v5.5)</title>
+  <title>sMV PowerChord (v5.6)</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -25,18 +25,18 @@
     
 <header class="topHeader noLearn">
   <div class="headerLeft">
-    <div class="title">sMV PowerChord v5.5</div>
+    <div class="title">sMV PowerChord v5.6</div>
     <div class="hint">Pads: Row1 A S D F G H J K • Row2 Q W E R T Y U I • Row3 Z X C V B N M ,</div>
   </div>
 </header>
-<div class="sanityBanner">Version: <b>v5.5</b></div>
+<div class="sanityBanner">Version: <b>v5.6</b></div>
 
 
 
     <section class="timeline">
       <div class="lane">
         <div class="laneTop">
-          <div>Looper</div>
+          <div>Master</div>
           <div id="loopInfo">Loop: 4 bars • Quantize: ON</div>
         </div>
         <div class="blocks" id="blocks">
@@ -84,6 +84,9 @@
       <option value="E">E</option><option value="F">F</option><option value="F#">F#</option><option value="G">G</option>
       <option value="G#">G#</option><option value="A">A</option><option value="A#">A#</option><option value="B">B</option></select></div>
     <div class="mini"><div class="miniLabel">Room</div><input id="rev" type="range" min="0" max="1" step="0.01" value="0.22"/></div>
+    <div class="mini"><div class="miniLabel">EQ Low</div><input id="eqLow" type="range" min="-12" max="12" step="0.5" value="0"/></div>
+    <div class="mini"><div class="miniLabel">EQ Mid</div><input id="eqMid" type="range" min="-12" max="12" step="0.5" value="0"/></div>
+    <div class="mini"><div class="miniLabel">EQ High</div><input id="eqHigh" type="range" min="-12" max="12" step="0.5" value="0"/></div>
 
     <label class="miniCheck" title="Output limiter + auto-duck"><input id="safeMode" type="checkbox" checked/><span>Safe</span></label>
     <label class="miniCheck" title="Disable if you hear mic feedback"><input id="micMonitor" type="checkbox" checked/><span>Mic Mon</span></label>

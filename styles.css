@@ -591,3 +591,20 @@ canvas{
   overflow:hidden;
   text-overflow:ellipsis;
 }
+
+.trackClipStrip{
+  grid-column: 1 / -1;
+}
+.trackClipStrip .trackClips{
+  margin-top: 0;
+}
+.trackName{ align-items:flex-start; }
+.clipResize{
+  position:absolute;
+  right:0;
+  top:0;
+  bottom:0;
+  width:8px;
+  cursor: ew-resize;
+  background: rgba(255,255,255,.35);
+}

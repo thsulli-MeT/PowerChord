@@ -113,6 +113,9 @@ const soundSel = document.getElementById("soundSel");
 const bpmEl  = document.getElementById("bpm");
 const barsSel= document.getElementById("barsSel");
 const revEl  = document.getElementById("rev");
+const eqLowEl = document.getElementById("eqLow");
+const eqMidEl = document.getElementById("eqMid");
+const eqHighEl = document.getElementById("eqHigh");
 const learnChordEl = document.getElementById("learnChord");
 const meterEl = document.getElementById("meter");
 const analyzerEl = document.getElementById("analyzer") || document.getElementById("spectrum");
@@ -177,6 +180,7 @@ let vizTimer = null;
 let master = null;
 let wet = null, dry = null;
 let convolver = null;
+let masterEqLow = null, masterEqMid = null, masterEqHigh = null;
 let activeVoiceStops = new Set();
 let micInputSource = null;
 let micInputStream = null;
@@ -575,8 +579,29 @@ function ensureAudio(){
   dry.connect(master);
   wet.connect(convolver);
   convolver.connect(master);
-  buildLimiterChain(ac, master);
 
+  masterEqLow = ac.createBiquadFilter();
+  masterEqLow.type = "lowshelf";
+  masterEqLow.frequency.value = 120;
+
+  masterEqMid = ac.createBiquadFilter();
+  masterEqMid.type = "peaking";
+  masterEqMid.frequency.value = 1200;
+  masterEqMid.Q.value = 0.9;
+
+  masterEqHigh = ac.createBiquadFilter();
+  masterEqHigh.type = "highshelf";
+  masterEqHigh.frequency.value = 4200;
+
+  master.connect(masterEqLow);
+  masterEqLow.connect(masterEqMid);
+  masterEqMid.connect(masterEqHigh);
+
+  buildLimiterChain(ac, masterEqHigh);
+
+  if (eqLowEl) masterEqLow.gain.value = parseFloat(eqLowEl.value || "0");
+  if (eqMidEl) masterEqMid.gain.value = parseFloat(eqMidEl.value || "0");
+  if (eqHighEl) masterEqHigh.gain.value = parseFloat(eqHighEl.value || "0");
   setAudioStateText("Audio: on");
   if (!vizTimer){ vizTimer = setInterval(drawViz, 50); }
 }
@@ -1412,6 +1437,7 @@ function buildTrackClipLanes(track){
       if (!lane) return;
       const clip = document.createElement("div");
       clip.className = "trackClip";
+      clip.dataset.eventId = String(ev.id);
       const left = (tBeats / lb) * 100;
       const d = Math.max(0.25, ev.dBeats ?? 1.0);
       const width = Math.max(2, (d / lb) * 100);
@@ -1426,7 +1452,45 @@ function buildTrackClipLanes(track){
         label = c.symbol || c.label || "Chord";
       }
       clip.textContent = label;
-      clip.title = `${label} @ beat ${tBeats.toFixed(2)}`;
+      clip.title = `${label} @ beat ${tBeats.toFixed(2)} (drag to move, drag right edge to resize)`;
+
+      const handle = document.createElement("span");
+      handle.className = "clipResize";
+      clip.appendChild(handle);
+
+      clip.addEventListener("pointerdown", (evPtr) => {
+        evPtr.preventDefault();
+        const rect = lane.getBoundingClientRect();
+        const startX = evPtr.clientX;
+        const startT = ((ev.tBeats % lb) + lb) % lb;
+        const startD = Math.max(0.25, ev.dBeats ?? 1.0);
+        const resizing = evPtr.target && evPtr.target.classList && evPtr.target.classList.contains("clipResize");
+
+        const onMove = (mv) => {
+          const deltaPx = mv.clientX - startX;
+          const deltaBeats = (deltaPx / Math.max(1, rect.width)) * lb;
+          if (resizing){
+            const nd = clamp(quantizeBeat(startD + deltaBeats, 0.25), 0.25, lb);
+            ev.dBeats = nd;
+          } else {
+            let nt = quantizeBeat(startT + deltaBeats, 0.25);
+            while (nt < 0) nt += lb;
+            while (nt >= lb) nt -= lb;
+            ev.tBeats = nt;
+          }
+          renderTracks();
+        };
+
+        const onUp = () => {
+          window.removeEventListener("pointermove", onMove);
+          window.removeEventListener("pointerup", onUp);
+          updateLoopBadge();
+        };
+
+        window.addEventListener("pointermove", onMove);
+        window.addEventListener("pointerup", onUp);
+      });
+
       lane.appendChild(clip);
     });
   });
@@ -1457,10 +1521,12 @@ function renderTracks(){
     metaEl.textContent = `${t.events.length ? `${t.events.length} clips` : "empty"} ${t.muted ? "• muted" : ""}`;
     info.appendChild(nameEl);
     info.appendChild(metaEl);
-    info.appendChild(buildTrackClipLanes(t));
 
     left.appendChild(dot);
     left.appendChild(info);
+    left.title = "Click to arm this track for recording";
+    left.style.cursor = "pointer";
+    left.addEventListener("click", () => setArmedTrack(t.id));
 
     const controls = document.createElement("div");
     controls.className = "trackCtl trackCtlInline";
@@ -1569,7 +1635,7 @@ function renderTracks(){
     const btns = document.createElement("div");
     btns.className = "trackBtns";
     btns.innerHTML = `
-      <button class="btn small arm ${t.armed ? "on" : ""}">Arm</button>
+      <button class="btn small arm ${t.armed ? "on" : ""}" title="Set as active recording track">Rec</button>
       <button class="btn small mute ${t.muted ? "on" : ""}">Mute</button>
       <button class="btn small clear">Clear</button>
       <button class="btn small dl">WAV</button>
@@ -1585,9 +1651,14 @@ function renderTracks(){
       finally { tracks.forEach((x, idx) => x.muted = backup[idx]); renderTracks(); }
     });
 
+    const clips = document.createElement("div");
+    clips.className = "trackClipStrip";
+    clips.appendChild(buildTrackClipLanes(t));
+
     row.appendChild(left);
     row.appendChild(controls);
     row.appendChild(btns);
+    row.appendChild(clips);
     tracksEl.appendChild(row);
   });
 
@@ -2133,6 +2204,9 @@ safeOn(barsSel, "change", () => {
   renderTicks();
 });
 safeOn(revEl, "input", () => { if (wet) wet.gain.value = parseFloat(revEl.value); });
+safeOn(eqLowEl, "input", () => { if (masterEqLow) masterEqLow.gain.value = parseFloat(eqLowEl.value || "0"); });
+safeOn(eqMidEl, "input", () => { if (masterEqMid) masterEqMid.gain.value = parseFloat(eqMidEl.value || "0"); });
+safeOn(eqHighEl, "input", () => { if (masterEqHigh) masterEqHigh.gain.value = parseFloat(eqHighEl.value || "0"); });
 
 safeOn(addTrackBtn, "click", () => addTrack());
 safeOn(clearAllBtn, "click", () => clearAll());
