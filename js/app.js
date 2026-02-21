@@ -1415,7 +1415,7 @@ function buildTrackClipLanes(track){
   wrap.className = "trackClips";
 
   const lb = Math.max(1, loopBeats());
-  for (let i=0;i<3;i++){
+  for (let i=0;i<1;i++){
     const lane = document.createElement("div");
     lane.className = "trackClipLane";
     wrap.appendChild(lane);
@@ -1427,7 +1427,7 @@ function buildTrackClipLanes(track){
     const key = (Math.round((((ev.tBeats % lb) + lb) % lb) * 1000) / 1000).toFixed(3);
     if (!group.has(key)) group.set(key, []);
     const arr = group.get(key);
-    if (arr.length < 3) arr.push(ev);
+    if (arr.length < 1) arr.push(ev);
   });
 
   group.forEach((arr, key) => {
@@ -1504,6 +1504,13 @@ function renderTracks(){
   tracks.forEach((t) => {
     const row = document.createElement("div");
     row.className = "trackRow";
+    if (t.armed) row.classList.add("armedRow");
+    row.title = "Click track row to set active recording track";
+    row.addEventListener("click", (ev) => {
+      const target = ev.target;
+      if (target && target.closest && target.closest("button,select,input,label,.trackClip,.clipResize")) return;
+      setArmedTrack(t.id);
+    });
 
     const left = document.createElement("div");
     left.className = "trackName";
@@ -1524,7 +1531,7 @@ function renderTracks(){
 
     left.appendChild(dot);
     left.appendChild(info);
-    left.title = "Click to arm this track for recording";
+    left.title = "Click to set this track as active recording track";
     left.style.cursor = "pointer";
     left.addEventListener("click", () => setArmedTrack(t.id));
 
@@ -1919,8 +1926,8 @@ function padHoldStart(padIndex, pointerId){
       const b = nowBeats();
       const q = quantizeBeat(b, 0.25) % loopBeats();
 
-      if (recTrack.role !== "drums" && recTrack.role !== "mic" && countEventsAtBeat(recTrack, q) >= 3){
-        setAudioStateText("Max 3 stacked chords per track beat");
+      if (recTrack.role !== "drums" && recTrack.role !== "mic" && countEventsAtBeat(recTrack, q) >= 1){
+        setAudioStateText("One clip at a time per track beat (add another track to layer)");
         return;
       }
 

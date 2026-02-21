@@ -1,0 +1,13 @@
+<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 800 260'>
+  <defs>
+    <linearGradient id='g' x1='0' x2='1'>
+      <stop offset='0' stop-color='#111'/><stop offset='1' stop-color='#333'/>
+    </linearGradient>
+  </defs>
+  <rect width='800' height='260' rx='24' fill='url(#g)'/>
+  <circle cx='130' cy='130' r='78' fill='none' stroke='#fff' stroke-width='8'/>
+  <text x='130' y='120' text-anchor='middle' fill='#fff' font-family='Arial' font-size='44' font-weight='700'>sMV</text>
+  <text x='130' y='160' text-anchor='middle' fill='#fff' font-family='Arial' font-size='30' font-weight='700'>MERCH</text>
+  <text x='320' y='110' fill='#fff' font-family='Arial' font-size='46' font-weight='800'>sMV Merch Store</text>
+  <text x='320' y='165' fill='#ddd' font-family='Arial' font-size='26'>Tees • Hoodies • Creator Gear</text>
+</svg>

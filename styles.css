@@ -608,3 +608,11 @@ canvas{
   cursor: ew-resize;
   background: rgba(255,255,255,.35);
 }
+
+.trackRow.armedRow{
+  border-color: rgba(96,165,250,.75);
+  box-shadow: inset 0 0 0 1px rgba(96,165,250,.35), 0 0 0 1px rgba(96,165,250,.25);
+}
+
+.adLink{ display:flex; align-items:center; justify-content:center; padding:2px; overflow:hidden; }
+.adLink img{ width:100%; height:100%; object-fit:cover; border-radius:8px; display:block; }
