@@ -1504,6 +1504,13 @@ function renderTracks(){
   tracks.forEach((t) => {
     const row = document.createElement("div");
     row.className = "trackRow";
+    if (t.armed) row.classList.add("armedRow");
+    row.title = "Click track row to set active recording track";
+    row.addEventListener("click", (ev) => {
+      const target = ev.target;
+      if (target && target.closest && target.closest("button,select,input,label,.trackClip,.clipResize")) return;
+      setArmedTrack(t.id);
+    });
 
     const left = document.createElement("div");
     left.className = "trackName";
@@ -1524,7 +1531,7 @@ function renderTracks(){
 
     left.appendChild(dot);
     left.appendChild(info);
-    left.title = "Click to arm this track for recording";
+    left.title = "Click to set this track as active recording track";
     left.style.cursor = "pointer";
     left.addEventListener("click", () => setArmedTrack(t.id));
 
