@@ -198,6 +198,7 @@ let isPlaying = false;
 let isRecording = false;
 let loopStartTime = 0;
 let transportStartMs = 0;
+let transportOffsetBeats = 0;
 let playTimer = null;
 let rafId = null;
 let playheadTimer = null;
@@ -214,6 +215,7 @@ let padIndexByChord = new Map();
 const drumPadRates = Array(8).fill(1.0);
 let simpleLoopEvents = [];
 let nextSimpleEventId = 1;
+const keyboardHoldMap = new Map();
 
 // helpers
 function clamp(v,a,b){ return Math.min(b, Math.max(a,v)); }
@@ -1721,10 +1723,26 @@ function nowBeats(){
     ? Math.max(0, (performance.now() - transportStartMs) / 1000)
     : Math.max(0, ac.currentTime - loopStartTime);
   const bps = bpm() / 60;
-  return sec * bps;
+  return transportOffsetBeats + (sec * bps);
 }
 
 // playback (no duplicates)
+
+function seekToBeat(beatInLoop){
+  const lb = Math.max(1, loopBeats());
+  let b = Number.isFinite(beatInLoop) ? beatInLoop : 0;
+  while (b < 0) b += lb;
+  while (b >= lb) b -= lb;
+  transportOffsetBeats = b;
+
+  if (ac) loopStartTime = ac.currentTime;
+  transportStartMs = performance.now();
+
+  tracks.forEach(t => { t.lastScheduledAbs = {}; });
+  simpleLoopEvents.forEach(ev => { ev.lastScheduledAbs = null; });
+
+  updatePlayheadUI();
+}
 
 function updatePlayheadUI(){
   if (!isPlaying) return;
@@ -1756,6 +1774,21 @@ function getPlayheadElements(){
     b.appendChild(p);
   }
   return { blocksEl:b, playheadEl:p };
+}
+
+function scheduleReplayVisual(padIndex, when){
+  if (padIndex == null) return;
+  const now = ac ? ac.currentTime : 0;
+  const delayMs = Math.max(0, ((when ?? now) - now) * 1000);
+  setTimeout(() => {
+    setPadActive(padIndex, true);
+    if (padIndex < 16){
+      const chordObj = chordForPad(padIndex, keySel.value);
+      highlightChordOnCircle(chordObj);
+      setChordDisplay(chordObj);
+      if (lastChord) lastChord.textContent = `Last: ${chordObj.label}`;
+    }
+  }, delayMs);
 }
 
 function playRecordedEvent(ev, when){
@@ -1800,6 +1833,7 @@ renderTicks();
           if (ev.lastScheduledAbs === nextAbs) return;
           ev.lastScheduledAbs = nextAbs;
           const when = tNow + (delta / bps);
+          scheduleReplayVisual(ev.padIndex, when);
           playRecordedEvent(ev, when);
         }
       });
@@ -1824,7 +1858,9 @@ renderTicks();
           track.lastScheduledAbs[ev.id] = nextAbs;
 
           const when = tNow + (delta / bps);
-          
+          const replayPadIndex = track.role === "drums" ? (16 + (ev.padIndex % DRUM_PAD_MAP.length)) : ev.padIndex;
+          scheduleReplayVisual(replayPadIndex, when);
+
           if (track.role === "mic") {
             return;
           }
@@ -1997,6 +2033,7 @@ function stop(){
   isPlaying = false;
   isRecording = false;
   transportStartMs = 0;
+  transportOffsetBeats = 0;
 
   playBtn.classList.remove("on");
   recBtn.classList.remove("on");
@@ -2215,6 +2252,18 @@ safeOn(eqLowEl, "input", () => { if (masterEqLow) masterEqLow.gain.value = parse
 safeOn(eqMidEl, "input", () => { if (masterEqMid) masterEqMid.gain.value = parseFloat(eqMidEl.value || "0"); });
 safeOn(eqHighEl, "input", () => { if (masterEqHigh) masterEqHigh.gain.value = parseFloat(eqHighEl.value || "0"); });
 
+if (blocks){
+  blocks.addEventListener("click", (ev) => {
+    const t = ev.target;
+    if (t && t.closest && t.closest(".trackClip,.clipResize")) return;
+    const rect = blocks.getBoundingClientRect();
+    if (!rect.width) return;
+    const frac = Math.min(1, Math.max(0, (ev.clientX - rect.left) / rect.width));
+    const targetBeat = frac * loopBeats();
+    seekToBeat(targetBeat);
+  });
+}
+
 safeOn(addTrackBtn, "click", () => addTrack());
 safeOn(clearAllBtn, "click", () => clearAll());
 safeOn(exportBtn, "click", () => bounceWav());
@@ -2236,14 +2285,19 @@ if (panicBtn){
 
 // keyboard shortcuts
 window.addEventListener("keydown", (e) => {
-  if (e.repeat) return;
   const k = e.key.toUpperCase();
   const idx = KBD_KEYS.indexOf(k);
   if (idx >= 0) {
+    if (e.repeat) return;
     const pid = "kbd-"+k;
-    padHoldStart(idx, pid);
-    setTimeout(() => padHoldEnd(pid), 120);
+    if (!keyboardHoldMap.has(k)){
+      keyboardHoldMap.set(k, pid);
+      padHoldStart(idx, pid);
+    }
+    return;
   }
+
+  if (e.repeat) return;
   if (e.code === "Space"){
     e.preventDefault();
     isPlaying ? stop() : start();
@@ -2253,6 +2307,14 @@ window.addEventListener("keydown", (e) => {
     const t = getArmedTrack();
     if (t) clearTrack(t.id);
   }
+});
+
+window.addEventListener("keyup", (e) => {
+  const k = e.key.toUpperCase();
+  const pid = keyboardHoldMap.get(k);
+  if (!pid) return;
+  padHoldEnd(pid);
+  keyboardHoldMap.delete(k);
 });
 
 // init
