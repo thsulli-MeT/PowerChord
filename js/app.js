@@ -646,8 +646,9 @@ function pluckNote(ctx, outDry, outWet, freq, when, durSec, vol, preset){
   exciteLP.frequency.setValueAtTime(800 + 4200 * p.brightness, t0);
 
   const exciteGain = ctx.createGain();
+  const pickAmt = clamp(p.pick ?? 0.9, 0.05, 1.4);
   exciteGain.gain.setValueAtTime(0.0001, t0);
-  exciteGain.gain.exponentialRampToValueAtTime(0.9 * v, t0 + 0.003);
+  exciteGain.gain.exponentialRampToValueAtTime((0.8 * pickAmt) * v, t0 + 0.003);
   exciteGain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.03);
 
   // Delay loop (Karplus-Strong)
@@ -677,14 +678,49 @@ function pluckNote(ctx, outDry, outWet, freq, when, durSec, vol, preset){
   const stopAt = t0 + (durSec ?? 0.8);
   out.gain.exponentialRampToValueAtTime(0.0001, stopAt + 0.02);
 
-  // Wire: exciter -> delay -> filter -> out -> dry/wet
+  // Wire: exciter -> delay -> filter
   noise.connect(exciteLP);
   exciteLP.connect(exciteGain);
   exciteGain.connect(delay);
 
   delay.connect(loopLP);
   loopLP.connect(loopHP);
-  loopHP.connect(out);
+
+  let stage = loopHP;
+
+  // Acoustic body resonance
+  if (Array.isArray(p.bodyRes) && p.bodyRes.length){
+    p.bodyRes.forEach((r) => {
+      const b = ctx.createBiquadFilter();
+      b.type = "peaking";
+      b.frequency.setValueAtTime(r.f, t0);
+      b.Q.setValueAtTime(r.q ?? 1.0, t0);
+      b.gain.setValueAtTime(r.g ?? 0, t0);
+      stage.connect(b);
+      stage = b;
+    });
+  }
+
+  // Optional drive/distortion (great for lead electric)
+  if ((p.drive ?? 0) > 0){
+    const sh = makeWaveshaper(ctx, 1.1 + (p.drive * 3.0));
+    stage.connect(sh);
+    stage = sh;
+  }
+
+  stage.connect(out);
+
+  // Optional simple chorus (detuned echo)
+  if ((p.chorus ?? 0) > 0){
+    const ch = ctx.createDelay(0.05);
+    ch.delayTime.setValueAtTime(0.012 + (p.chorus * 0.012), t0);
+    const chg = ctx.createGain();
+    chg.gain.setValueAtTime(0.08 + (p.chorus * 0.22), t0);
+    stage.connect(ch);
+    ch.connect(chg);
+    chg.connect(out);
+  }
+
   out.connect(outDry);
   out.connect(outWet);
 
@@ -802,30 +838,38 @@ function getPreset(instrumentId){
 
   if (id === "acoustic_guitar"){
     return {
-      engine:"harm",
-      harm:[1.00,0.75,0.55,0.35,0.22,0.14],
-      types:["triangle","sawtooth","sawtooth","triangle","sine","sine"],
-      detune:0.0,
-      voiceGain:0.14,
-      attack:0.004, decay:0.18, sustain:0.18, release:0.32,
-      cutoff:2600, lpQ:0.6,
-      noise:0.12, noiseDur:0.018, noiseF:1900, noiseQ:1.2,
-      res:[{f:180,q:1.0,g:5.0},{f:700,q:1.2,g:3.5},{f:2200,q:1.0,g:2.2}],
-      drive:0.15
+      engine:"pluck",
+      brightness:0.62,
+      decay:0.64,
+      damp:0.36,
+      pick:0.82,
+      bodyRes:[{f:180,q:1.2,g:4.2},{f:630,q:1.1,g:2.4},{f:2100,q:1.0,g:1.5}],
+      drive:0.0,
+      chorus:0.08
     };
   }
   if (id === "electric_guitar"){
     return {
-      engine:"harm",
-      harm:[1.00,0.85,0.60,0.40,0.25,0.16,0.10],
-      types:["sawtooth","sawtooth","triangle","triangle","sine","sine","sine"],
-      detune:0.0,
-      voiceGain:0.12,
-      attack:0.003, decay:0.14, sustain:0.24, release:0.26,
-      cutoff:3200, lpQ:0.55,
-      noise:0.08, noiseDur:0.014, noiseF:2400, noiseQ:1.4,
-      res:[{f:140,q:0.9,g:4.2},{f:900,q:1.1,g:2.8},{f:2600,q:1.0,g:2.6}],
-      drive:0.28
+      engine:"pluck",
+      brightness:0.78,
+      decay:0.56,
+      damp:0.28,
+      pick:1.05,
+      bodyRes:[{f:260,q:1.0,g:2.2},{f:1400,q:1.2,g:2.0}],
+      drive:0.46,
+      chorus:0.22
+    };
+  }
+  if (id === "lead_rock_guitar"){
+    return {
+      engine:"pluck",
+      brightness:0.86,
+      decay:0.52,
+      damp:0.24,
+      pick:1.15,
+      bodyRes:[{f:320,q:0.9,g:2.0},{f:1900,q:1.4,g:2.8}],
+      drive:0.72,
+      chorus:0.30
     };
   }
 
@@ -1205,6 +1249,7 @@ const INSTRUMENTS = [
   { value:"bright_synth",    label:"Bright Synth",    supportsStrum:false },
   { value:"acoustic_guitar", label:"Acoustic Guitar", supportsStrum:true  },
   { value:"electric_guitar", label:"Electric Guitar", supportsStrum:true  },
+  { value:"lead_rock_guitar", label:"Lead Rock Guitar", supportsStrum:true  },
   { value:"bass_guitar",     label:"Bass Guitar",     supportsStrum:false },
   { value:"drum_kit", label:"Drum Kit", supportsStrum:false },
   { value:"microphone", label:"Microphone", supportsStrum:false },
