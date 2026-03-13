@@ -17,3 +17,12 @@ GitHub connection (quickest path)
 GitHub Pages deploy check
 - Repo Settings -> Pages -> Source branch should be `main` (or your deploy branch)
 - After merge, wait ~1-5 minutes and hard refresh.
+
+Custom domain + HTTPS quick fix (GoDaddy)
+- If GitHub shows "Unavailable for your site because your domain is not properly configured to support HTTPS",
+  first disable GoDaddy Forwarding / connected products for the domain.
+- Apex `@` should only have GitHub Pages A records:
+  185.199.108.153, 185.199.109.153, 185.199.110.153, 185.199.111.153
+- `www` should point to GitHub Pages (CNAME preferred).
+- In GitHub Repo Settings -> Pages, set custom domain to `power-chord.studio`, save again,
+  then enable "Enforce HTTPS" after cert provisioning finishes.
