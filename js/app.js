@@ -639,11 +639,12 @@ function pluckNote(ctx, outDry, outWet, freq, when, durSec, vol, preset){
 
   // Exciter: short noise burst through a brightness filter
   const noise = ctx.createBufferSource();
-  noise.buffer = makeNoiseBuffer(ctx, 0.028);
+  const noiseDur = clamp(0.016 + (1 / Math.max(70, freq)) * 1.2, 0.016, 0.032);
+  noise.buffer = makeNoiseBuffer(ctx, noiseDur);
 
   const exciteLP = ctx.createBiquadFilter();
   exciteLP.type = "lowpass";
-  exciteLP.frequency.setValueAtTime(800 + 4200 * p.brightness, t0);
+  exciteLP.frequency.setValueAtTime(700 + 4600 * p.brightness, t0);
 
   const exciteGain = ctx.createGain();
   const pickAmt = clamp(p.pick ?? 0.9, 0.05, 1.4);
@@ -653,11 +654,13 @@ function pluckNote(ctx, outDry, outWet, freq, when, durSec, vol, preset){
 
   // Delay loop (Karplus-Strong)
   const delay = ctx.createDelay();
-  delay.delayTime.setValueAtTime(1 / Math.max(40, freq), t0);
+  // Tiny compensation keeps pitch closer to the target when loop filters are active.
+  const baseDelay = (1 / Math.max(40, freq)) - (0.4 / ctx.sampleRate);
+  delay.delayTime.setValueAtTime(Math.max(1 / 6000, baseDelay), t0);
 
   const fb = ctx.createGain();
   // feedback controls decay
-  const fbVal = clamp(0.92 - 0.25 * p.damp + 0.02 * (p.decay ?? 0.5), 0.65, 0.93);
+  const fbVal = clamp(0.9 - 0.22 * p.damp + 0.05 * (p.decay ?? 0.5), 0.62, 0.95);
   fb.gain.setValueAtTime(fbVal, t0);
 
   const loopLP = ctx.createBiquadFilter();
@@ -667,7 +670,9 @@ function pluckNote(ctx, outDry, outWet, freq, when, durSec, vol, preset){
   loopHP.frequency.setValueAtTime(60, t0);
   loopHP.Q.setValueAtTime(0.7, t0);
 
-  loopLP.frequency.setValueAtTime(1200 + 2600 * p.brightness, t0);
+  const loopTone = clamp((p.tone ?? 0.6), 0, 1);
+  const toneHz = clamp((freq * (3.2 + loopTone * 3.6)) + 650, 900, 5200);
+  loopLP.frequency.setValueAtTime(toneHz, t0);
   loopLP.Q.setValueAtTime(0.6, t0);
 
   // Output gain envelope
@@ -703,10 +708,24 @@ function pluckNote(ctx, outDry, outWet, freq, when, durSec, vol, preset){
 
   // Optional drive/distortion (great for lead electric)
   if ((p.drive ?? 0) > 0){
-    const sh = makeWaveshaper(ctx, 1.1 + (p.drive * 3.0));
+    const preDriveLP = ctx.createBiquadFilter();
+    preDriveLP.type = "lowpass";
+    preDriveLP.frequency.setValueAtTime(2400 + (p.brightness ?? 0.5) * 1800, t0);
+    stage.connect(preDriveLP);
+    stage = preDriveLP;
+
+    const sh = makeWaveshaper(ctx, 1.05 + (p.drive * 2.4));
     stage.connect(sh);
     stage = sh;
   }
+
+  // Gentle post-tone trim keeps guitar presets from getting fizzy.
+  const postTone = ctx.createBiquadFilter();
+  postTone.type = "highshelf";
+  postTone.frequency.setValueAtTime(3200, t0);
+  postTone.gain.setValueAtTime(-1.5 - (p.drive ?? 0) * 2.5, t0);
+  stage.connect(postTone);
+  stage = postTone;
 
   stage.connect(out);
 
@@ -839,37 +858,40 @@ function getPreset(instrumentId){
   if (id === "acoustic_guitar"){
     return {
       engine:"pluck",
-      brightness:0.62,
-      decay:0.64,
-      damp:0.36,
-      pick:0.82,
+      brightness:0.58,
+      decay:0.72,
+      damp:0.30,
+      pick:0.76,
+      tone:0.52,
       bodyRes:[{f:180,q:1.2,g:4.2},{f:630,q:1.1,g:2.4},{f:2100,q:1.0,g:1.5}],
       drive:0.0,
-      chorus:0.08
+      chorus:0.05
     };
   }
   if (id === "electric_guitar"){
     return {
       engine:"pluck",
-      brightness:0.78,
-      decay:0.56,
-      damp:0.28,
-      pick:1.05,
+      brightness:0.74,
+      decay:0.60,
+      damp:0.24,
+      pick:0.92,
+      tone:0.62,
       bodyRes:[{f:260,q:1.0,g:2.2},{f:1400,q:1.2,g:2.0}],
-      drive:0.46,
-      chorus:0.22
+      drive:0.34,
+      chorus:0.16
     };
   }
   if (id === "lead_rock_guitar"){
     return {
       engine:"pluck",
-      brightness:0.86,
-      decay:0.52,
-      damp:0.24,
-      pick:1.15,
+      brightness:0.80,
+      decay:0.58,
+      damp:0.22,
+      pick:1.00,
+      tone:0.68,
       bodyRes:[{f:320,q:0.9,g:2.0},{f:1900,q:1.4,g:2.8}],
-      drive:0.72,
-      chorus:0.30
+      drive:0.54,
+      chorus:0.20
     };
   }
 
