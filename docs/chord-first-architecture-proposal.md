@@ -1,203 +1,259 @@
-# PowerChord Studio — Chord-First Product Architecture Proposal
+# PowerChord Studio — Chord-First Guitar Product Plan (Revised)
 
-## Product thesis
-PowerChord should be a **chord-first guitar songwriting instrument**, not a generic browser DAW.
+## Product position (explicit)
+PowerChord should be the fastest way for non-guitarists to create **believable electric guitar parts from chords**.
 
-### Target users
-- Non-guitarist songwriters
-- Producers who can write chords but not realistic guitar performance
-- Creators who need “finished guitar energy” quickly
-
-### Product promise
-Given a progression + section intent, generate believable electric guitar parts with musical strumming, voicing intelligence, and mix-ready tone presets in seconds.
+It should **not** feel like a generic browser DAW.
 
 ---
 
-## 1) Product architecture
+## Priority stack (must-have order)
 
-Use a layered architecture with strict separation between:
-1. **Musical intent** (chords, sections, style)
-2. **Guitar performance generation** (voicings + strum/articulation events)
-3. **Audio rendering** (source + amp/cab/fx DSP)
-4. **UX orchestration** (beginner presets vs advanced editing)
+### 1) Most important: Guitar behavior engine
+This is the #1 differentiator vs GarageBand/BandLab for this workflow.
 
-### Recommended high-level pipeline
+Required behaviors:
+- Downstroke/upstroke realism
+- Strum timing spread (string-to-string offset)
+- Chord inversions/voicings that sit naturally on guitar
+- Fret-range logic (register + playability constraints)
+- Humanized accents
+- Palm mute / stop / ring articulation
 
-1. User enters progression and section map (Verse/Chorus/Bridge)
-2. Arrangement engine selects section pattern “feel templates”
-3. Guitar behavior engine creates note/performance events
-4. Tone preset engine binds to a playable chain
-5. Playback engine renders in AudioWorklet graph
-6. Optional advanced mode exposes event and tone edits
-
-### Runtime components
-- **Main thread**: UI, project state, preset browser
-- **AudioWorklet thread**: timing-critical event scheduler + DSP nodes
-- **Worker thread**: heavier precomputation (voicing search, humanization variants, preset loading)
-
----
-
-## 2) Source engine (sound generation)
-
-Because your goal is believable electric guitar quickly (not full DAW synthesis), prioritize a hybrid source strategy:
-
-### MVP source approach
-- **Multi-sample/round-robin guitar source**
-  - Velocity layers (soft/medium/hard)
-  - Pick-direction variants (down/up)
-  - Palm-mute variants
-  - Choke/stop noises
-- Per-string trigger awareness when possible
-
-This yields faster realism than a purely synthesized string model at MVP scope.
-
-### Mid-term enhancement
-- Add **physical-model-inspired post shaping** (pick transient and string/body resonance filters) to glue sample switching and improve continuity.
-
-### Event format
-Define a normalized event schema:
-- `noteOn`, `noteOff`
-- `stringIndex`, `fret`, `pitch`
-- `pickDirection`
-- `articulation` (`ring`, `mute`, `stop`, `accent`)
-- `timingOffsetMs`, `velocity`
-
-That allows the behavior engine to be independent of source implementation.
-
----
-
-## 3) Guitar behavior engine
-
-This is your core differentiator.
-
-### A. Voicing engine
-Input: chord symbol + key context + section role + target register
-
-Output: playable guitar voicing candidates scored by:
-- Playability constraints (fret span, string skips)
-- Register suitability (avoid muddy low stacking)
-- Voice-leading distance from previous chord
-- Style profile (indie open strings vs tight funk triads)
-
-Use weighted scoring, then choose top candidate with controlled variation.
-
-### B. Strum engine
-Generate strum as ordered per-string note events, not block chords.
-
-Parameters:
-- Direction pattern (down/up probability map)
-- Spread time (e.g. 8–35ms depending on intensity)
-- Swing/push-pull microtiming
-- Ghost/missed string logic
-
-### C. Articulation engine
-Per hit or per bar:
-- `ring` (let sustain)
-- `palmMute` (short decay + darker attack)
-- `stop`/choke (forced cutoff)
-- `accent` (velocity + transient boost)
-
-Section templates should control articulation density (e.g., Chorus = more accents, Verse = tighter mute pattern).
-
-### D. Section-aware feel templates
-Each section chooses a “guitar role recipe”:
-- **Verse**: sparser, muted, mid-register
-- **Chorus**: wider strums, stronger accents, fuller voicings
-- **Bridge**: contrast mode (arpeggio or syncopated chops)
-
-Engine should keep chord progression constant while swapping rhythmic/voicing behavior by section.
-
----
-
-## 4) Preset-first tone system
-
-### Product principle
-“Great by default” > “infinite tweakability.”
-
-### Preset model
-Each preset is a structured chain descriptor:
-- Input conditioning (gate/comp optional)
-- Drive/amp stage
-- Cabinet/speaker stage
-- Mod/time FX (optional)
-- Macro controls (`Tone`, `Drive`, `Space`, `Tightness`)
-
-### Preset categories (launch)
-- Pop Clean
-- Alt Pop Crunch
-- Indie Rock Wide
-- Dream Pop Shimmer
-- Funk Tight
+### 2) Second: Preset-first great tone
+No “100 knobs” first. Start with excellent instant tones:
+- Clean Sparkle
+- Dream Chorus
+- Indie Crunch
 - Blues Edge
-- Lead Sing
+- Arena Lead
+- Muted Pop Funk
 
-### Preset UX
-- Beginner mode: select one preset + one intensity control
-- Advanced mode: open chain and tweak module-level parameters
+### 3) Third: Section-aware rhythm generation
+Same chords should become musically different per section:
+- Verse
+- Pre-Chorus
+- Chorus
+- Bridge
+
+### 4) Fourth: Browser-grade low-latency DSP foundation
+- AudioWorklet scheduling/rendering
+- WebAssembly path for heavier DSP blocks
+- Modular amp/cab/effects chain
+
+### 5) Fifth: Real guitar input mode (later)
+Important expansion, but not MVP-critical.
 
 ---
 
-## 5) Browser DSP quality architecture
+## Core product architecture
 
-### Audio engine design
-- Use **AudioWorklet** for stable low-latency scheduling and DSP execution
-- Avoid ScriptProcessorNode
-- Keep sample-accurate event timing in worklet clock domain
+### A. Musical intent layer (what the user means)
+- Chord progression + tempo + key
+- Section map (Verse / Pre-Chorus / Chorus / Bridge)
+- Style intent (e.g., indie, dream, funk)
 
-### DSP chain architecture
-Use modular processing blocks with clear interfaces:
-1. Pre-filter / gate
-2. Drive/amp block
-3. Cab block (lightweight convolution or multi-filter approximation)
-4. Post FX (chorus, delay, reverb)
+### B. Guitar behavior layer (how a guitarist would perform it)
+- Voicing/inversion selector
+- Strum direction + spread generator
+- Accent + articulation planner
+- Section variation planner
+
+### C. Tone/rendering layer (how it sounds)
+- Guitar source playback engine (sample/round-robin first)
+- Amp/cab/effects chain
+- Performance macro mapping (energy/tightness/brightness/space)
+
+### D. Interaction layer (how users control it)
+- Beginner “Generate + tweak” flow
+- Advanced edit flow
+- Live chord-pad performance surface (new, detailed below)
+
+---
+
+## Guitar behavior engine spec (most important)
+
+### 1. Voicing and inversion engine
+Input:
+- Chord symbol
+- Key context
+- Prior voicing (for voice-leading)
+- Section role (Verse/Pre/Chorus/Bridge)
+- Target register
+
+Scoring constraints:
+- Fret span playability
+- Realistic string-set usage
+- Voice-leading smoothness
+- Register clarity (avoid low-end mud)
+- Style profile preferences
+
+Output:
+- Selected voicing with optional alternates for variation/regeneration
+
+### 2. Strum engine
+Represent strums as per-string events, not block chords.
+
+Per-strum parameters:
+- `direction`: `down` or `up`
+- `spreadMs`: string traversal time
+- `swingOffsetMs` / groove bias
+- `velocityCurve`
+- `stringSkipMask` (optional missed strings)
+
+### 3. Articulation engine
+Per-event or per-bar articulation tags:
+- `ring`
+- `palmMute`
+- `stop`
+- `accent`
+
+Behavior:
+- Verse: tighter, lighter accents
+- Pre-Chorus: rising energy, more directional drive
+- Chorus: wider strums, stronger accents, longer ring
+- Bridge: contrast pattern (e.g., muted chops or arpeggiated motion)
+
+### 4. Humanization model
+- Deterministic random seed per take (reproducible)
+- Microtiming ± (bounded)
+- Velocity jitter by role (accented vs non-accented)
+- Subtle pick inconsistency model for realism
+
+---
+
+## New performance feature: chord pad strum + sustain control
+
+You requested direct performance control by strumming up/down on chord pads with sustain and expressive wobble control.
+
+### Chord Pad Performance Surface
+Each chord pad acts like a playable guitar trigger:
+
+#### Gestures
+- **Vertical drag down** on pad → downstroke trigger
+- **Vertical drag up** on pad → upstroke trigger
+- **Tap** → default strum based on current section pattern
+- **Press-hold** → sustain latch while held
+- **Release** → stop/ring according to articulation mode
+
+#### Performance controls
+- **Sustain mode toggle**
+  - Hold-to-sustain (momentary)
+  - Latch sustain (toggle)
+- **Mute/Stop button** for immediate choke
+- **Accent pressure/speed mapping**
+  - Faster drag = stronger accent/attack
+
+#### “String wobble” / vibrato-like feel
+Add a macro called **Wobble**:
+- Modulates subtle pitch + amplitude + filter movement
+- Depth limited to musical ranges (avoid cheesy detune)
+- Can be mapped to horizontal micro-drag on held pad
+
+This gives more “gritty electric” expression without exposing full synth complexity.
+
+### Why this matters
+- Makes chord entry feel performative, not static block playback
+- Gives non-guitarists intuitive control similar to strumming behavior
+- Helps produce more animated takes quickly
+
+---
+
+## Preset-first tone system (simplified)
+
+### Preset design principle
+- Instant polished tone
+- Few macro controls
+- No deep chain editing in default mode
+
+### Launch preset list (requested)
+1. Clean Sparkle
+2. Dream Chorus
+3. Indie Crunch
+4. Blues Edge
+5. Arena Lead
+6. Muted Pop Funk
+
+### Macro controls (beginner)
+- **Energy** (attack + gain staging)
+- **Tone** (brightness contour)
+- **Tightness** (gate/mute feel + low-end control)
+- **Space** (delay/reverb amount)
+- **Wobble** (expressive modulation depth)
+
+### Advanced tone mode
+- Unlock per-module controls (amp/cab/FX)
+- Keep optional; default flow stays simple
+
+---
+
+## Section-aware rhythm generation
+
+For the same progression, generate distinct section feels:
+
+- **Verse template:** restrained rhythm, tighter mute behavior
+- **Pre-Chorus template:** lift with denser upstrokes and rising accents
+- **Chorus template:** fuller voicings, bigger spread, longer sustain
+- **Bridge template:** contrast rhythm (syncopated or arpeggiated)
+
+Add `Regenerate Section` so users can iterate one section without changing the whole song.
+
+---
+
+## Browser DSP technical foundation
+
+### Audio architecture
+- AudioWorklet for event scheduler + timing-critical DSP
+- Main thread for UI/state only
+- Worker for non-real-time prep (preset decode, voicing search)
+- WASM hooks for heavier amp/cab stages as quality increases
+
+### Chain topology (MVP)
+1. Input conditioning
+2. Amp/drive stage
+3. Cabinet stage (light IR or efficient filter model)
+4. Mod/time FX
 5. Output limiter
 
-### Cabinet stage recommendation
-For MVP, implement lightweight cabinet tone using:
-- short IR convolution (small footprint) or
-- tuned multi-band filter profile per cabinet
-
-Make cab profiles a key part of preset identity.
+### Latency targets
+- Keep monitoring/playable interaction low enough for pad strumming feel
+- Prioritize stable timing over oversized FX complexity in MVP
 
 ---
 
-## 6) UI flow: beginner vs advanced
+## Beginner vs Advanced UX
 
-### Beginner mode (default)
-1. Enter chord progression
-2. Choose section map (Verse/Chorus/Bridge)
-3. Pick style/preset
-4. Click “Generate Guitar Part”
-5. Adjust 3–4 macros:
-   - Energy
-   - Tightness
-   - Brightness
-   - Space
+### Beginner (default)
+1. Enter chords
+2. Define sections (Verse / Pre / Chorus / Bridge)
+3. Pick one preset
+4. Play/strum chords on chord pads
+5. Adjust macros (Energy, Tone, Tightness, Space, Wobble)
+6. Export
 
-No piano-roll, no mixer complexity upfront.
+No mixer-first workflow, no dense DAW paneling.
 
-### Advanced mode (opt-in)
-Expose deeper controls:
-- Voicing lock/override by bar
+### Advanced (opt-in)
+- Voicing override per chord/bar
 - Strum pattern editor
-- Articulation lane (mute/stop/accent)
-- Full preset chain editor
-- Humanization amount and random seed
-
-Keep this behind an explicit “Advanced Edit” transition so core experience stays immediate.
+- Articulation lane (mute/stop/ring/accent)
+- Tone chain editor
+- Humanization seed/amount
 
 ---
 
-## 7) Suggested TypeScript module structure
+## TypeScript module structure
 
 ```text
 ts/
   core/
     types/
-      music.ts              // Chord, section, arrangement, performance event types
-      audio.ts              // DSP chain and preset interfaces
+      music.ts
+      performance.ts
+      audio.ts
     state/
-      projectStore.ts       // Global project state (sections, progression, selected preset)
+      projectStore.ts
+      performanceStore.ts
 
   music/
     harmony/
@@ -208,84 +264,85 @@ ts/
       voicingSearch.ts
       voicingScorer.ts
     rhythm/
-      strumPatternLib.ts
       strumGenerator.ts
       timingHumanizer.ts
+      sectionRhythmTemplates.ts
     articulation/
       articulationPlanner.ts
-    arrangement/
-      sectionTemplateLib.ts
-      arrangementPlanner.ts
 
-  audio/
-    engine/
-      audioEngine.ts        // main-thread audio orchestration
-      workletBridge.ts
-    worklets/
-      scheduler.worklet.ts
-      guitarVoice.worklet.ts
-      ampCab.worklet.ts
-      fxChain.worklet.ts
-    dsp/
-      ampModels.ts
-      cabProfiles.ts
-      dynamics.ts
-      modulation.ts
-      delayReverb.ts
+  interaction/
+    chordPad/
+      chordPadGestureEngine.ts      // up/down drag to strum mapping
+      sustainController.ts          // hold/latch sustain behavior
+      wobbleController.ts           // expressive wobble macro mapping
 
   presets/
     presetSchema.ts
-    presetLibrary.ts
-    presetMacros.ts
+    presetLibrary.ts               // Clean Sparkle, Dream Chorus, etc.
+    macroMapper.ts
+
+  audio/
+    engine/
+      audioEngine.ts
+      workletBridge.ts
+    worklets/
+      scheduler.worklet.ts
+      guitarSource.worklet.ts
+      ampCab.worklet.ts
+      fx.worklet.ts
+    dsp/
+      ampModel.ts
+      cabModel.ts
+      modulation.ts
+      delayReverb.ts
+      limiter.ts
 
   ui/
     beginner/
-      GeneratePanel.tsx
-      QuickControls.tsx
+      ChordPadGrid.tsx
+      QuickTonePanel.tsx
+      SectionBuilder.tsx
     advanced/
-      PatternEditor.tsx
+      StrumEditor.tsx
       ArticulationLane.tsx
       ToneChainEditor.tsx
-    shared/
-      SectionTimeline.tsx
-      ChordProgressionInput.tsx
-
-  app/
-    bootstrap.ts
 ```
 
 ---
 
-## 8) MVP build order
+## MVP build order (re-ranked to your priorities)
 
-### Phase 1 — Musical core (highest leverage)
+### Phase 1 — Guitar behavior core (must win here)
 1. Chord parser + normalization
-2. Voicing search/scoring (basic style profiles)
-3. Strum generator (down/up + spread + accents)
-4. Section template swapping (Verse/Chorus behavior)
+2. Voicing/inversion engine with fret-range logic
+3. Strum direction/spread/accent generation
+4. Palm mute / stop / ring articulation system
+5. Humanization seed model
 
-### Phase 2 — Listenable tone fast
-5. Sample-based guitar source with round-robin variants
-6. Basic amp + cab + space FX preset chain
-7. 7 launch presets tuned for target genres
+### Phase 2 — Chord-pad performance experience
+6. Chord pad up/down gesture strumming
+7. Hold/latch sustain logic
+8. Wobble macro performance control
+9. Per-section rhythm template application (Verse/Pre/Chorus/Bridge)
 
-### Phase 3 — Product UX polish
-8. Beginner Generate flow with macro controls
-9. “Regenerate variation” + random seed persistence
-10. Export/render audio
+### Phase 3 — Preset-first tone
+10. Implement 6 core presets (Clean Sparkle, Dream Chorus, Indie Crunch, Blues Edge, Arena Lead, Muted Pop Funk)
+11. Add macro layer (Energy/Tone/Tightness/Space/Wobble)
+12. Lock default UX to simple preset + macros
 
-### Phase 4 — Advanced depth
-11. Advanced edit mode (voicing/pattern/articulation lanes)
-12. Optional guitar input mode (monitor + tone chain)
+### Phase 4 — DSP quality scaling
+13. AudioWorklet hardening + latency optimization
+14. Add WASM acceleration path for heavier amp/cab quality
+
+### Phase 5 — Advanced mode + future expansion
+15. Advanced editing panels
+16. Optional real guitar input mode
 
 ---
 
-## 9) Success metrics (to validate focus)
-
-- **Time-to-first-usable-part** under 30s
-- **Regeneration satisfaction** (user keeps generated part without major edits)
-- **Preset adoption** (high usage of defaults without deep tweaking)
-- **Section contrast quality** (users perceive clear verse/chorus differentiation)
-- **Bounce/export rate** (finished output per project)
-
-If these improve, you are winning the chord-first workflow rather than competing as another generic DAW.
+## Success criteria
+- Users can get a believable guitar part from chords in <30 seconds.
+- Section contrast is clearly audible for same progression.
+- High usage of default presets/macros without deep tweaking.
+- Chord-pad strum feature feels performative (not static trigger).
+- Export completion rate increases for first-session users.
