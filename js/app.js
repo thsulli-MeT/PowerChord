@@ -228,7 +228,7 @@ function isGuitarTrack(track){
 }
 
 function defaultGuitarFx(){
-  return { drive:0.58, chorus:0.18, delay:0.12, reverb:0.24, gate:0.42, fxAmount:0.62 };
+  return { drive:0.64, chorus:0.22, delay:0.18, reverb:0.28, gate:0.26, fxAmount:0.72 };
 }
 
 function ensureTrackDefaults(track){
@@ -914,31 +914,31 @@ function getPreset(instrumentId){
   if (id === "electric_guitar"){
     return {
       engine:"pluck",
-      brightness:0.74,
-      decay:0.60,
-      damp:0.18,
-      pick:1.02,
-      tone:0.66,
-      bodyRes:[{f:180,q:0.9,g:2.0},{f:720,q:0.8,g:1.6},{f:1650,q:1.2,g:2.4}],
-      drive:0.42,
-      chorus:0.18,
-      fxDelay:0.08,
-      fxReverbBoost:0.12
+      brightness:0.82,
+      decay:0.74,
+      damp:0.14,
+      pick:1.08,
+      tone:0.74,
+      bodyRes:[{f:160,q:0.85,g:2.8},{f:520,q:0.9,g:1.8},{f:1240,q:1.1,g:2.0},{f:2280,q:1.5,g:2.4}],
+      drive:0.52,
+      chorus:0.22,
+      fxDelay:0.14,
+      fxReverbBoost:0.18
     };
   }
   if (id === "lead_rock_guitar"){
     return {
       engine:"pluck",
-      brightness:0.82,
-      decay:0.68,
-      damp:0.16,
-      pick:1.08,
-      tone:0.74,
-      bodyRes:[{f:220,q:0.9,g:2.3},{f:980,q:1.1,g:2.1},{f:2100,q:1.5,g:2.9}],
-      drive:0.62,
-      chorus:0.24,
-      fxDelay:0.12,
-      fxReverbBoost:0.16
+      brightness:0.86,
+      decay:0.82,
+      damp:0.12,
+      pick:1.12,
+      tone:0.80,
+      bodyRes:[{f:180,q:0.9,g:2.6},{f:760,q:1.0,g:2.1},{f:1480,q:1.2,g:2.3},{f:2600,q:1.5,g:3.1}],
+      drive:0.70,
+      chorus:0.26,
+      fxDelay:0.18,
+      fxReverbBoost:0.22
     };
   }
 
@@ -991,7 +991,7 @@ function startChord(ctx, outDry, outWet, freqs, when, volumeMul, instrumentId, s
 
   if (safeMode && preset.engine === "pluck"){
     // Safety mode: keep pluck character but force heavy damping.
-    preset = { ...preset, damp: Math.max(0.55, preset.damp ?? 0.35), brightness: Math.min(0.55, preset.brightness ?? 0.45) };
+    preset = { ...preset, damp: Math.max(0.38, preset.damp ?? 0.28), brightness: Math.min(0.68, preset.brightness ?? 0.58) };
   }
 
   // Pluck engine (guitar/bass)
@@ -1729,10 +1729,16 @@ function renderTracks(){
       badge2.className = "trackBadge";
       badge2.textContent = appMode === "beginner" ? "Beginner FX" : "Advanced FX";
       nameWrap.appendChild(badge2);
+    } else if (t.name === "Multi Track"){
+      const badge2 = document.createElement("span");
+      badge2.className = "trackBadge";
+      badge2.textContent = "Piano / Synth / Bass";
+      nameWrap.appendChild(badge2);
     }
     const metaEl = document.createElement("div");
     metaEl.className = "trackMeta";
-    metaEl.textContent = `${t.events.length ? `${t.events.length} clips` : "empty"} ${t.muted ? "• muted" : ""}`;
+    const statusText = t.events.length ? `${t.events.length} clips` : (t.name === "Power-chord" ? "ready to play" : (t.name === "Multi Track" ? "keys / synth / bass ready" : (t.role === "drums" ? "starter groove ready" : "ready")));
+    metaEl.textContent = `${statusText} ${t.muted ? "• muted" : ""}`;
     info.appendChild(nameWrap);
     info.appendChild(metaEl);
 
@@ -2542,18 +2548,28 @@ if (firstTrack){
   firstTrack.role = "chord";
   firstTrack.instrument = "electric_guitar";
   firstTrack.strum = true;
-  firstTrack.rev = 0.20;
-  firstTrack.vol = 0.96;
+  firstTrack.rev = 0.24;
+  firstTrack.vol = 0.98;
   firstTrack.guitarFx = defaultGuitarFx();
 }
 
-addTrack("Drums 1");
+addTrack("Multi Track");
 const secondTrack = tracks[1];
 if (secondTrack){
-  secondTrack.role = "drums";
-  secondTrack.instrument = "drum_kit";
-  secondTrack.rev = 0.12;
-  secondTrack.vol = 0.95;
+  secondTrack.role = "chord";
+  secondTrack.instrument = "classic_piano";
+  secondTrack.strum = false;
+  secondTrack.rev = 0.18;
+  secondTrack.vol = 0.94;
+}
+
+addTrack("Drums 1");
+const thirdTrack = tracks[2];
+if (thirdTrack){
+  thirdTrack.role = "drums";
+  thirdTrack.instrument = "drum_kit";
+  thirdTrack.rev = 0.12;
+  thirdTrack.vol = 0.95;
 }
 if (firstTrack) setArmedTrack(firstTrack.id);
 updateModeSwitchUI();
