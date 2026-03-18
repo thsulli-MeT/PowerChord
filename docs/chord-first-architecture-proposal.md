@@ -29,6 +29,10 @@ No “100 knobs” first. Start with excellent instant tones:
 - Arena Lead
 - Muted Pop Funk
 
+Tone benchmark note:
+- Use the current bass guitar quality/behavior as an internal baseline.
+- Electric rhythm and lead guitars should feel similarly “finished” and playable at default settings.
+
 ### 3) Third: Section-aware rhythm generation
 Same chords should become musically different per section:
 - Verse
@@ -68,6 +72,7 @@ Important expansion, but not MVP-critical.
 - Beginner “Generate + tweak” flow
 - Advanced edit flow
 - Live chord-pad performance surface (new, detailed below)
+- Compact guitar FX panel (quick on/off shaping without DAW complexity)
 
 ---
 
@@ -185,6 +190,29 @@ This gives more “gritty electric” expression without exposing full synth com
 - Unlock per-module controls (amp/cab/FX)
 - Keep optional; default flow stays simple
 
+## Compact guitar FX panel (new)
+
+Add a small always-visible panel for electric/lead guitar shaping so users can quickly match bass-like readiness while staying simple.
+
+### Beginner FX panel (small, fast)
+- 5 compact switches/knobs:
+  - Drive
+  - Chorus
+  - Delay
+  - Reverb
+  - Tight Gate
+- Single **FX Amount** macro for global intensity.
+- Preset-linked defaults so it sounds good without manual setup.
+
+### Advanced FX panel (expanded)
+- Module-level parameters per effect (rate/depth/mix/feedback/tone).
+- Effect order options (limited presets + optional custom order).
+- Per-section FX scene overrides (e.g., dryer verse, wider chorus).
+
+### Behavior goals
+- Beginner: “small panel, instant improvement, no confusion.”
+- Advanced: deeper control without forcing DAW-style mixer workflows.
+
 ---
 
 ## Section-aware rhythm generation
@@ -229,7 +257,8 @@ Add `Regenerate Section` so users can iterate one section without changing the w
 3. Pick one preset
 4. Play/strum chords on chord pads
 5. Adjust macros (Energy, Tone, Tightness, Space, Wobble)
-6. Export
+6. Optionally use compact FX panel (Drive/Chorus/Delay/Reverb/Gate + FX Amount)
+7. Export
 
 No mixer-first workflow, no dense DAW paneling.
 
@@ -238,6 +267,7 @@ No mixer-first workflow, no dense DAW paneling.
 - Strum pattern editor
 - Articulation lane (mute/stop/ring/accent)
 - Tone chain editor
+- Expanded FX controls + per-section FX scenes
 - Humanization seed/amount
 
 ---
@@ -301,11 +331,13 @@ ts/
     beginner/
       ChordPadGrid.tsx
       QuickTonePanel.tsx
+      CompactFxPanel.tsx
       SectionBuilder.tsx
     advanced/
       StrumEditor.tsx
       ArticulationLane.tsx
       ToneChainEditor.tsx
+      AdvancedFxPanel.tsx
 ```
 
 ---
@@ -328,15 +360,16 @@ ts/
 ### Phase 3 — Preset-first tone
 10. Implement 6 core presets (Clean Sparkle, Dream Chorus, Indie Crunch, Blues Edge, Arena Lead, Muted Pop Funk)
 11. Add macro layer (Energy/Tone/Tightness/Space/Wobble)
-12. Lock default UX to simple preset + macros
+12. Add compact beginner FX panel (Drive/Chorus/Delay/Reverb/Gate + FX Amount)
+13. Lock default UX to simple preset + macros + compact FX
 
 ### Phase 4 — DSP quality scaling
-13. AudioWorklet hardening + latency optimization
-14. Add WASM acceleration path for heavier amp/cab quality
+14. AudioWorklet hardening + latency optimization
+15. Add WASM acceleration path for heavier amp/cab quality
 
 ### Phase 5 — Advanced mode + future expansion
-15. Advanced editing panels
-16. Optional real guitar input mode
+16. Advanced editing panels + expanded FX controls
+17. Optional real guitar input mode
 
 ---
 
