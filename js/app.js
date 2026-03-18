@@ -107,6 +107,7 @@ const padModeLabel = document.getElementById("padModeLabel");
 const tracksEl = document.getElementById("tracks");
 const addTrackBtn = document.getElementById("addTrackBtn");
 const clearAllBtn = document.getElementById("clearAllBtn");
+const modeSwitchBtn = document.getElementById("modeSwitchBtn");
 
 const keySel = document.getElementById("keySel");
 const soundSel = document.getElementById("soundSel");
@@ -206,6 +207,7 @@ let playheadTimer = null;
 // Tracks
 let tracks = []; // {id,name,color,role,events:[], muted:false, armed:false, vol:0..1}
 let armedTrackId = null;
+let appMode = "beginner";
 
 // Pads
 let padButtons = [];
@@ -219,6 +221,29 @@ const keyboardHoldMap = new Map();
 
 // helpers
 function clamp(v,a,b){ return Math.min(b, Math.max(a,v)); }
+
+
+function isGuitarTrack(track){
+  return ["electric_guitar","lead_rock_guitar"].includes(track?.instrument);
+}
+
+function defaultGuitarFx(){
+  return { drive:0.58, chorus:0.18, delay:0.12, reverb:0.24, gate:0.42, fxAmount:0.62 };
+}
+
+function ensureTrackDefaults(track){
+  if (!track) return track;
+  if (isGuitarTrack(track) && !track.guitarFx) track.guitarFx = defaultGuitarFx();
+  return track;
+}
+
+function updateModeSwitchUI(){
+  if (!modeSwitchBtn) return;
+  modeSwitchBtn.textContent = appMode === "beginner" ? "Beginner" : "Advanced";
+  modeSwitchBtn.classList.toggle("beginner", appMode === "beginner");
+  modeSwitchBtn.classList.toggle("advanced", appMode === "advanced");
+}
+
 
 
 function drumHit(ctx, outDry, outWet, type, when, vol=1.0, revSend=0.15){
@@ -743,6 +768,24 @@ function pluckNote(ctx, outDry, outWet, freq, when, durSec, vol, preset){
   out.connect(outDry);
   out.connect(outWet);
 
+  if ((p.fxDelay ?? 0) > 0){
+    const dly = ctx.createDelay(0.45);
+    dly.delayTime.setValueAtTime(0.08 + (p.fxDelay * 0.16), t0);
+    const dlyGain = ctx.createGain();
+    dlyGain.gain.setValueAtTime(0.08 + (p.fxDelay * 0.18), t0);
+    out.connect(dly);
+    dly.connect(dlyGain);
+    dlyGain.connect(outDry);
+    dlyGain.connect(outWet);
+  }
+
+  if ((p.fxReverbBoost ?? 0) > 0){
+    const wetBoost = ctx.createGain();
+    wetBoost.gain.setValueAtTime(0.10 + (p.fxReverbBoost * 0.30), t0);
+    out.connect(wetBoost);
+    wetBoost.connect(outWet);
+  }
+
   // Feedback loop
   loopHP.connect(fb);
   fb.connect(delay);
@@ -873,25 +916,29 @@ function getPreset(instrumentId){
       engine:"pluck",
       brightness:0.74,
       decay:0.60,
-      damp:0.24,
-      pick:0.92,
-      tone:0.62,
-      bodyRes:[{f:260,q:1.0,g:2.2},{f:1400,q:1.2,g:2.0}],
-      drive:0.34,
-      chorus:0.16
+      damp:0.18,
+      pick:1.02,
+      tone:0.66,
+      bodyRes:[{f:180,q:0.9,g:2.0},{f:720,q:0.8,g:1.6},{f:1650,q:1.2,g:2.4}],
+      drive:0.42,
+      chorus:0.18,
+      fxDelay:0.08,
+      fxReverbBoost:0.12
     };
   }
   if (id === "lead_rock_guitar"){
     return {
       engine:"pluck",
-      brightness:0.80,
-      decay:0.58,
-      damp:0.22,
-      pick:1.00,
-      tone:0.68,
-      bodyRes:[{f:320,q:0.9,g:2.0},{f:1900,q:1.4,g:2.8}],
-      drive:0.54,
-      chorus:0.20
+      brightness:0.82,
+      decay:0.68,
+      damp:0.16,
+      pick:1.08,
+      tone:0.74,
+      bodyRes:[{f:220,q:0.9,g:2.3},{f:980,q:1.1,g:2.1},{f:2100,q:1.5,g:2.9}],
+      drive:0.62,
+      chorus:0.24,
+      fxDelay:0.12,
+      fxReverbBoost:0.16
     };
   }
 
@@ -913,11 +960,25 @@ function getPreset(instrumentId){
   return { engine:"osc", type:"triangle", cutoff:1400, attack:0.01, decay:0.08, sustain:0.7, release:0.25, voiceGain:0.22 };
 }
 
-function startChord(ctx, outDry, outWet, freqs, when, volumeMul, instrumentId, strumOn, revSend){
+function startChord(ctx, outDry, outWet, freqs, when, volumeMul, instrumentId, strumOn, revSend, performanceOpts){
   const t0 = when ?? ctx.currentTime;
   const vol = clamp(volumeMul ?? 1, 0, 1);
   let preset = getPreset(instrumentId);
   const meta = instrumentMeta(instrumentId || (soundSel ? soundSel.value : "classic_piano"));
+  const fx = performanceOpts?.guitarFx || null;
+  if (fx && ["electric_guitar","lead_rock_guitar"].includes(instrumentId)){
+    const amount = clamp(fx.fxAmount ?? 0.6, 0, 1);
+    preset = {
+      ...preset,
+      drive: clamp((preset.drive ?? 0) + (fx.drive ?? 0) * 0.55 * amount, 0, 1.25),
+      chorus: clamp((preset.chorus ?? 0) + (fx.chorus ?? 0) * 0.45 * amount, 0, 1),
+      brightness: clamp((preset.brightness ?? 0.6) + ((fx.drive ?? 0) * 0.05) - ((fx.gate ?? 0) * 0.03), 0.2, 1),
+      damp: clamp((preset.damp ?? 0.3) + (fx.gate ?? 0) * 0.18, 0.05, 0.85),
+      tone: clamp((preset.tone ?? 0.6) + ((fx.delay ?? 0) * 0.04), 0.2, 1),
+      fxDelay: clamp((fx.delay ?? 0) * amount, 0, 1),
+      fxReverbBoost: clamp((fx.reverb ?? 0) * amount, 0, 1)
+    };
+  }
   const doStrum = !!strumOn && meta.supportsStrum && freqs.length > 1;
   const strumStep = 0.018; // seconds between notes
   const rs = clamp((revSend ?? 0.22), 0, 1);
@@ -992,8 +1053,8 @@ function startChord(ctx, outDry, outWet, freqs, when, volumeMul, instrumentId, s
   return (atTime)=>{ try{ stop(atTime); } finally { activeVoiceStops.delete(stop); } };
 }
 
-function playScheduled(ctx, outDry, outWet, freqs, when, durSec, volumeMul, instrumentId, strumOn, revSend){
-  const stop = startChord(ctx, outDry, outWet, freqs, when, volumeMul, instrumentId, strumOn, revSend);
+function playScheduled(ctx, outDry, outWet, freqs, when, durSec, volumeMul, instrumentId, strumOn, revSend, performanceOpts){
+  const stop = startChord(ctx, outDry, outWet, freqs, when, volumeMul, instrumentId, strumOn, revSend, performanceOpts);
   stop((when ?? ctx.currentTime) + (durSec ?? 0.9));
 }
 
@@ -1427,7 +1488,7 @@ function applyDrumPattern(kind){
 function addTrack(name){
   const id = uid();
   const color = TRACK_COLORS[tracks.length % TRACK_COLORS.length];
-  const t = { id, name: name ?? `Track ${tracks.length + 1}`, color, role:"chord", instrument:"classic_piano", strum:false, rev:0.22, micFx:{ rev:0.25, delay:0.12, comp:0.30, tune:0.15, autoTune:true, tuneKey:"C" }, events: [], muted:false, armed:false, vol:1.00, lastScheduledAbs:{} };
+  const t = ensureTrackDefaults({ id, name: name ?? `Track ${tracks.length + 1}`, color, role:"chord", instrument:"classic_piano", strum:false, rev:0.22, micFx:{ rev:0.25, delay:0.12, comp:0.30, tune:0.15, autoTune:true, tuneKey:"C" }, events: [], muted:false, armed:false, vol:1.00, lastScheduledAbs:{} });
   tracks.push(t);
   if (!armedTrackId) setArmedTrack(id);
   renderTracks();
@@ -1567,13 +1628,75 @@ function buildTrackClipLanes(track){
   return wrap;
 }
 
+function buildGuitarPanel(track){
+  ensureTrackDefaults(track);
+  const fx = track.guitarFx || (track.guitarFx = defaultGuitarFx());
+  const panel = document.createElement("div");
+  panel.className = "guitarPanel";
+
+  const title = document.createElement("div");
+  title.className = "guitarPanelTitle";
+  title.innerHTML = `<strong>Power-chord guitar panel</strong><span>${appMode === "beginner" ? "Quick FX" : "Advanced shaping"}</span>`;
+  panel.appendChild(title);
+
+  const pillRow = document.createElement("div");
+  pillRow.className = "fxPillRow";
+  const chips = [
+    ["Drive","drive",0.55],["Chorus","chorus",0.18],["Delay","delay",0.12],["Reverb","reverb",0.24],["Gate","gate",0.42]
+  ];
+  chips.forEach(([label,key,def]) => {
+    const btn = document.createElement("button");
+    btn.className = "fxChip" + ((fx[key] ?? 0) > 0.02 ? " on" : "");
+    btn.type = "button";
+    btn.textContent = label;
+    btn.title = `Toggle ${label}`;
+    btn.addEventListener("click", () => {
+      fx[key] = (fx[key] ?? 0) > 0.02 ? 0 : def;
+      renderTracks();
+    });
+    pillRow.appendChild(btn);
+  });
+  panel.appendChild(pillRow);
+
+  const grid = document.createElement("div");
+  grid.className = 'guitarFxGrid ' + (appMode === 'beginner' ? 'compact' : 'advanced');
+  const addSlider = (label, key) => {
+    const wrap = document.createElement('div');
+    const lab = document.createElement('div');
+    lab.className = 'smallLabel';
+    lab.innerHTML = `<strong>${label}</strong> ${(fx[key] ?? 0).toFixed(2)}`;
+    const input = document.createElement('input');
+    input.type = 'range'; input.min = '0'; input.max = '1'; input.step = '0.01'; input.value = String(fx[key] ?? 0);
+    input.addEventListener('input', () => { fx[key] = parseFloat(input.value); lab.innerHTML = `<strong>${label}</strong> ${fx[key].toFixed(2)}`; });
+    wrap.appendChild(lab); wrap.appendChild(input); grid.appendChild(wrap);
+  };
+
+  if (appMode === 'beginner'){
+    addSlider('FX Amount','fxAmount');
+    addSlider('Drive','drive');
+    addSlider('Space','reverb');
+    addSlider('Tight Gate','gate');
+  } else {
+    addSlider('FX Amount','fxAmount');
+    addSlider('Drive','drive');
+    addSlider('Chorus','chorus');
+    addSlider('Delay','delay');
+    addSlider('Reverb','reverb');
+    addSlider('Gate','gate');
+  }
+  panel.appendChild(grid);
+  return panel;
+}
+
 function renderTracks(){
   if (!tracksEl) return;
   tracksEl.innerHTML = "";
   tracks.forEach((t) => {
+    ensureTrackDefaults(t);
     const row = document.createElement("div");
     row.className = "trackRow";
     if (t.armed) row.classList.add("armedRow");
+    if (t.name === "Power-chord") row.classList.add("powerChordTrack");
     row.title = "Click track row to set active recording track";
     row.addEventListener("click", (ev) => {
       const target = ev.target;
@@ -1589,13 +1712,28 @@ function renderTracks(){
     dot.style.background = t.color;
 
     const info = document.createElement("div");
+    const nameWrap = document.createElement("div");
+    nameWrap.className = "trackTitleRow";
     const nameEl = document.createElement("div");
     nameEl.style.fontWeight = "650";
     nameEl.textContent = t.name;
+    nameWrap.appendChild(nameEl);
+    if (t.name === "Power-chord"){
+      const badge = document.createElement("span");
+      badge.className = "trackBadge powerChord";
+      badge.textContent = "Default electric guitar";
+      nameWrap.appendChild(badge);
+    }
+    if (isGuitarTrack(t)){
+      const badge2 = document.createElement("span");
+      badge2.className = "trackBadge";
+      badge2.textContent = appMode === "beginner" ? "Beginner FX" : "Advanced FX";
+      nameWrap.appendChild(badge2);
+    }
     const metaEl = document.createElement("div");
     metaEl.className = "trackMeta";
     metaEl.textContent = `${t.events.length ? `${t.events.length} clips` : "empty"} ${t.muted ? "• muted" : ""}`;
-    info.appendChild(nameEl);
+    info.appendChild(nameWrap);
     info.appendChild(metaEl);
 
     left.appendChild(dot);
@@ -1606,6 +1744,7 @@ function renderTracks(){
 
     const controls = document.createElement("div");
     controls.className = "trackCtl trackCtlInline";
+    const beginnerPowerChord = (appMode === "beginner" && t.name === "Power-chord");
 
     const roleSel = document.createElement("select");
     ROLES.forEach(r => {
@@ -1622,7 +1761,7 @@ function renderTracks(){
       renderTracks();
       rebuildMicRouting();
     });
-    controls.appendChild(wrapCtl("Role", roleSel));
+    if (!beginnerPowerChord) controls.appendChild(wrapCtl("Role", roleSel));
 
     const instSel = document.createElement("select");
     INSTRUMENTS.forEach(r => {
@@ -1639,7 +1778,7 @@ function renderTracks(){
       if (!meta.supportsStrum) t.strum = false;
       renderTracks();
     });
-    controls.appendChild(wrapCtl("Instrument", instSel));
+    if (!beginnerPowerChord) controls.appendChild(wrapCtl("Instrument", instSel));
 
     const vol = document.createElement("input");
     vol.type = "range"; vol.min = "0"; vol.max = "1"; vol.step = "0.01"; vol.value = String(t.vol);
@@ -1649,7 +1788,7 @@ function renderTracks(){
     const rv = document.createElement("input");
     rv.type = "range"; rv.min = "0"; rv.max = "1"; rv.step = "0.01"; rv.value = String(t.rev ?? 0.22);
     rv.addEventListener("input", () => { t.rev = parseFloat(rv.value); });
-    controls.appendChild(wrapCtl("Rev", rv));
+    controls.appendChild(wrapCtl(beginnerPowerChord ? "Room" : "Rev", rv));
 
     if (t.role === "mic"){
       const fx = t.micFx || (t.micFx = { rev:0.25, delay:0.12, comp:0.30, tune:0.15, autoTune:true, tuneKey:"C" });
@@ -1705,7 +1844,8 @@ function renderTracks(){
       strLab.textContent = meta.supportsStrum ? "Strum" : "Strum (n/a)";
       strWrap.appendChild(str);
       strWrap.appendChild(strLab);
-      controls.appendChild(wrapCtl("Feel", strWrap));
+      controls.appendChild(wrapCtl(beginnerPowerChord ? "Strum" : "Feel", strWrap));
+      if (isGuitarTrack(t)) controls.appendChild(buildGuitarPanel(t));
     }
 
     const btns = document.createElement("div");
@@ -1780,7 +1920,7 @@ function scheduleTrackEventToOffline(off, track, ev, dryNode, wetNode){
   }
   const chordObj = chordForPad(ev.padIndex, keySel.value);
   const freqs = freqsForRole(track.role, chordObj);
-  playScheduled(off, dryNode, wetNode, freqs, whenSec, durSec, track.vol, track.instrument, track.strum, track.rev);
+  playScheduled(off, dryNode, wetNode, freqs, whenSec, durSec, track.vol, track.instrument, track.strum, track.rev, { guitarFx: track.guitarFx });
 }
 function nowBeats(){
   // Fallback to wall clock when AudioContext is blocked/suspended so
@@ -1938,7 +2078,7 @@ renderTicks();
             const chordObj = chordForPad(ev.padIndex, keySel.value);
             const freqs = freqsForRole(track.role, chordObj);
             const durSec = beatsToSeconds(ev.dBeats ?? 1.0);
-            playScheduled(ac, dry, wet, freqs, when, durSec, track.vol, track.instrument, track.strum, track.rev);
+            playScheduled(ac, dry, wet, freqs, when, durSec, track.vol, track.instrument, track.strum, track.rev, { guitarFx: track.guitarFx });
           }
 
         }
@@ -2333,6 +2473,11 @@ if (blocks){
 
 safeOn(addTrackBtn, "click", () => addTrack());
 safeOn(clearAllBtn, "click", () => clearAll());
+safeOn(modeSwitchBtn, "click", () => {
+  appMode = appMode === "beginner" ? "advanced" : "beginner";
+  updateModeSwitchUI();
+  renderTracks();
+});
 safeOn(exportBtn, "click", () => bounceWav());
 safeOn(exportTracksBtn, "click", () => bounceTracks());
 if (panicBtn){
@@ -2391,11 +2536,15 @@ if (keySel){
   highlightKeyOnCircle(keySel.value);
   setChordDisplay(chordForPad(0, keySel.value));
 }
-addTrack("Instrument 1");
+addTrack("Power-chord");
 const firstTrack = tracks[0];
 if (firstTrack){
   firstTrack.role = "chord";
-  firstTrack.instrument = "classic_piano";
+  firstTrack.instrument = "electric_guitar";
+  firstTrack.strum = true;
+  firstTrack.rev = 0.20;
+  firstTrack.vol = 0.96;
+  firstTrack.guitarFx = defaultGuitarFx();
 }
 
 addTrack("Drums 1");
@@ -2407,6 +2556,7 @@ if (secondTrack){
   secondTrack.vol = 0.95;
 }
 if (firstTrack) setArmedTrack(firstTrack.id);
+updateModeSwitchUI();
 updateLoopBadge();
 if (loopInfo) loopInfo.textContent = `Loop: ${bars()} bars • Quantize: ON`;
 
